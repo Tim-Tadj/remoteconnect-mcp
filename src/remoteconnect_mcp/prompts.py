@@ -20,6 +20,23 @@ from __future__ import annotations
 
 def register_prompts(mcp) -> None:
     @mcp.prompt()
+    def inspect_remoteconnect_configuration() -> str:
+        """Inventory RemoteConnect configuration and interpret edit feedback safely."""
+        return (
+            "Goal: understand a RemoteConnect project configuration and its edit feedback.\n\n"
+            "1. Call inspect_remoteconnect_project(path) to locate the complete PRJ/STU bundle.\n"
+            "2. Call inventory_remoteconnect_configuration(path) to enumerate DTM topology IDs "
+            "and every configuration record group without deserializing proprietary payloads.\n"
+            "3. After an Object Bulk Edit operation, call read_remoteconnect_feedback(). Treat "
+            "ok=false or any severity='error' event as a failed validation. Review warnings, "
+            "including values RemoteConnect corrected automatically, before accepting a copy.\n"
+            "4. Use object names and source file/line fields from feedback to repair the input "
+            "and repeat until there are no errors.\n\n"
+            "Current safety boundary: configuration payload writes are not yet enabled. Logic "
+            "writes remain copy-only through build_remoteconnect_logic_copy."
+        )
+
+    @mcp.prompt()
     def edit_remoteconnect_logic_copy() -> str:
         """Safely edit and rebuild RemoteConnect logic without touching the source."""
         return (

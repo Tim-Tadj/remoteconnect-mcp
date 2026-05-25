@@ -17,7 +17,7 @@ from .bridge import ControlExpertBridge
 from .modbus import ModbusClient, ModbusError, parse_address
 from .prompts import register_prompts
 from . import schema as ce_schema
-from .remoteconnect import discover_bundle, inspect_project
+from .remoteconnect import discover_bundle, inspect_project, inventory_project, read_feedback
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,7 +51,7 @@ mcp = FastMCP(
 
 # FastMCP doesn't forward a version to the low-level server, so its serverInfo
 # would otherwise report the mcp SDK version; set the real package version.
-mcp._mcp_server.version = "0.9.0"
+mcp._mcp_server.version = "0.10.0"
 
 ce = ControlExpertBridge()
 mb = ModbusClient()
@@ -126,6 +126,37 @@ def inspect_remoteconnect_project(path: str) -> dict:
     try:
         return inspect_project(path)
     except (FileNotFoundError, ValueError, ElementTree.ParseError) as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool()
+def inventory_remoteconnect_configuration(path: str) -> dict:
+    """Read the RemoteConnect FDT/DTM topology and configuration-object index.
+
+    Returns every DTM identifier and its InstanceDataRecord groups. Values in
+    those records are proprietary serialized payloads and remain opaque; this
+    tool never performs unsafe .NET deserialization or modifies the project.
+    """
+    try:
+        return inventory_project(path)
+    except (FileNotFoundError, ValueError, ElementTree.ParseError) as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool()
+def read_remoteconnect_feedback(
+    log_path: str = "", latest: bool = True, max_files: int = 20
+) -> dict:
+    """Read structured RemoteConnect Object Bulk Edit feedback.
+
+    With no log_path, reads the newest RemoteConnect bulk-edit log from the
+    current Windows user's application-data directory. Set latest=false to
+    aggregate up to max_files. Returns per-object changes, warnings and errors,
+    source file/line references, counts, and ok=false when errors are present.
+    """
+    try:
+        return read_feedback(log_path or None, latest=latest, max_files=max_files)
+    except (FileNotFoundError, ValueError, OSError) as exc:
         raise ValueError(str(exc)) from exc
 
 
