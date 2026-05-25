@@ -18,6 +18,7 @@ from .modbus import ModbusClient, ModbusError, parse_address
 from .prompts import register_prompts
 from . import schema as ce_schema
 from .remoteconnect import discover_bundle, inspect_project, inventory_project, read_feedback
+from .bulk_edit import BulkEditError, create_workbook_copy, inspect_workbook
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,7 +52,7 @@ mcp = FastMCP(
 
 # FastMCP doesn't forward a version to the low-level server, so its serverInfo
 # would otherwise report the mcp SDK version; set the real package version.
-mcp._mcp_server.version = "0.10.0"
+mcp._mcp_server.version = "0.11.0"
 
 ce = ControlExpertBridge()
 mb = ModbusClient()
@@ -157,6 +158,46 @@ def read_remoteconnect_feedback(
     try:
         return read_feedback(log_path or None, latest=latest, max_files=max_files)
     except (FileNotFoundError, ValueError, OSError) as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool()
+def inspect_remoteconnect_bulk_edit_workbook(
+    path: str, sheet_name: str = "", limit: int = 100
+) -> dict:
+    """Read a native RemoteConnect Object Bulk Edit `.xls` workbook.
+
+    Returns workbook version/DTM metadata and every sheet's stable machine
+    fields. Pass sheet_name to also return up to limit data rows. Use the row-2
+    machine fields, not translated row-1 labels, when creating patches.
+    """
+    try:
+        return inspect_workbook(path, sheet_name or None, limit)
+    except BulkEditError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool()
+def create_remoteconnect_bulk_edit_copy(
+    template_path: str,
+    output_path: str,
+    patches: list[dict],
+    overwrite: bool = False,
+) -> dict:
+    """Create a patched copy of a RemoteConnect Object Bulk Edit workbook.
+
+    Each patch is {sheet, match, values}; match must select exactly one existing
+    row using row-2 machine fields. Example: {sheet:'(20) Ethernet Ports',
+    match:{Port:'Ethernet1'}, values:{IpAddress:'192.168.1.10'}}. The template
+    is never modified. The generated XLS is reopened and structurally checked;
+    RemoteConnect import plus read_remoteconnect_feedback remains the final
+    semantic validation step.
+    """
+    try:
+        return create_workbook_copy(
+            template_path, output_path, patches, overwrite=overwrite
+        )
+    except (BulkEditError, OSError) as exc:
         raise ValueError(str(exc)) from exc
 
 

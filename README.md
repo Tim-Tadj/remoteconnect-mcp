@@ -103,6 +103,8 @@ claude mcp add control-expert -- C:\path\to\control-expert-mcp\.venv\Scripts\pyt
 | `inspect_remoteconnect_project` | Read-only discovery and summary of paired RemoteConnect `.PRJ/.RCZ/.STU/.STA` files |
 | `inventory_remoteconnect_configuration` | Read-only FDT/DTM topology and configuration-record inventory; never deserializes opaque vendor payloads |
 | `read_remoteconnect_feedback` | Parse Object Bulk Edit logs into per-object changes, warnings, errors, and an `ok` result |
+| `inspect_remoteconnect_bulk_edit_workbook` | Read native RemoteConnect `.xls` sheets, stable field names, metadata, and rows |
+| `create_remoteconnect_bulk_edit_copy` | Apply exact-row typed patches to a new `.xls` copy and structurally reopen it |
 | `open_remoteconnect_logic` | Open a bundle's paired UnitySoControl logic file using the configured OEM context |
 | `build_remoteconnect_logic_copy` | Add variables/ST, full rebuild, and save only a clean result to a new `.STU` copy |
 | `open_project` | Open `.stu` / `.sta` / `.xef` / `.zef` |

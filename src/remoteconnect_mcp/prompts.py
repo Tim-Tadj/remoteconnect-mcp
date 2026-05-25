@@ -32,7 +32,11 @@ def register_prompts(mcp) -> None:
             "including values RemoteConnect corrected automatically, before accepting a copy.\n"
             "4. Use object names and source file/line fields from feedback to repair the input "
             "and repeat until there are no errors.\n\n"
-            "Current safety boundary: configuration payload writes are not yet enabled. Logic "
+            "To prepare a supported configuration change, inspect a RemoteConnect-exported XLS "
+            "with inspect_remoteconnect_bulk_edit_workbook, then call "
+            "create_remoteconnect_bulk_edit_copy using exact row-2 machine field names. Import "
+            "the generated copy in RemoteConnect and call read_remoteconnect_feedback. Never "
+            "accept the result if feedback contains errors; review automatic corrections. Logic "
             "writes remain copy-only through build_remoteconnect_logic_copy."
         )
 
