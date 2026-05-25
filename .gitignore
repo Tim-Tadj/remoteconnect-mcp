@@ -8,6 +8,10 @@ build/
 dist/
 .pytest_cache/
 
+# Local bootstrap tooling
+.tools/
+gh_*_windows_amd64.zip
+
 # Control Expert project / archive binaries (regenerable test outputs)
 *.stu
 *.sta
