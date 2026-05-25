@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "remoteconnect": {
+      "type": "stdio",
+      "command": "C:\\path\\to\\remoteconnect-mcp\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "remoteconnect_mcp"],
+      "env": {
+        "CE_MCP_ENABLE_ONLINE": "0",
+        "CE_MCP_XPDF_CONTEXT": "C:\\ProgramData\\Schneider Electric\\CommonControlExpert\\16.2\\Xpdf\\SCBForSCADAPack.xpdf"
+      }
+    }
+  }
+}

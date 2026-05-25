@@ -1,0 +1,60 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Control Expert project / archive binaries (regenerable test outputs)
+*.stu
+*.sta
+*.zef
+*.xef
+*.ztx
+*.bak
+*.BAK
+
+# DDT Mirror moved to its own repository (github.com/apexsotjo-blip/
+# ddt-mirror-app, private) - full history preserved via git subtree split.
+# The folder stays on disk as an independent git repo; this parent repo no
+# longer tracks it.
+New Project Build/
+
+# Proprietary / customer data — NEVER commit
+# (real project exports learned via the read tools during the recreation test)
+New Project Data/
+remoteconnect.xls
+RC_PROBE_import.xls
+*_ImportLog.txt
+
+# Third-party tooling — never commit (unlicensed binaries)
+Modbus Poll/
+
+# Local scratch notes
+pending.txt
+
+tools/bigtest/ref/
+tools/bigtest/weaknesses.jsonl
+tools/bigtest/settings_to_apply.json
+tools/bigtest/*_app.xef.xml
+tools/bigtest/*_cpu_module.xml
+tools/bigtest/*_prmcfg.xml
+ref_*.xml
+master_ds_full.xml
+master_control_params.xml
+
+# Vendor extracts
+tools/pdf_images/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local attic - snapshots that may contain customer data, never commit
+_attic/
