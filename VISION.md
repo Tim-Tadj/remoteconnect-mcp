@@ -133,6 +133,22 @@ the simulator, and read/write live values — guided the whole way.
 
 ## Roadmap (next)
 
+### RemoteConnect programmatic DTM bridge (in progress)
+
+- UI automation was removed in v0.13.0; this bridge uses only the installed FDT/DTM APIs.
+- Confirmed project path: `IProjectService.Open` -> `IFrameProject.DTMs` ->
+  `IDTMListItem.OpenDTM()` -> `IDTMProxy`.
+- Confirmed command path: `IProxyBaseFunctions.DTMFunctions` -> `ExecutableFunction` ->
+  `ExecuteCommandFunction(...)`, with completion/error feedback from DTM proxy events.
+- Confirmed x70 implementation: `CommandFunctionProvider` contains direct, non-dialog
+  Excel validation/import/export operations.
+- The SDK `ProjectService` has no usable parameterless constructor. The next implementation
+  step is a minimal Unity/runtime-frame bootstrap using the installed `Project.config`, then
+  open/import/save/close against an automatically-created project copy.
+- `tools/dtm_reflect.cs` and `tools/dtm_headless_probe.cs` are reproducible discovery probes;
+  the latter currently proves that dependency bootstrap is required and must not be exposed
+  as an MCP mutation tool until copy/open/save validation passes.
+
 0. **Run the final big test** (above) and **commit the uncommitted batch**.
 1. **Advanced SFC**: mine the spec's `linkSFC` directed-link pin-coordinate rules (in
    `_docspec/UDEXMLUnityProIECLanguages.txt`), then build-validate alternative + parallel
