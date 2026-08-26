@@ -1,6 +1,6 @@
 [project]
 name = "remoteconnect-mcp"
-version = "0.14.0"
+version = "0.15.0"
 description = "MCP server for Schneider Electric RemoteConnect and SCADAPack x70 logic projects"
 readme = "README.md"
 requires-python = ">=3.10"

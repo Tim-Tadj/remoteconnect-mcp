@@ -151,6 +151,19 @@ the simulator, and read/write live values — guided the whole way.
 - `tools/dtm_reflect.cs` remains the discovery probe; the production native source is packaged
   at `src/remoteconnect_mcp/native/RemoteConnectBridge.cs` and compiled/cached on demand.
 
+### Relationship-aware bulk authoring (v0.15.0)
+
+- The 25-sheet XLS now has an explicit relationship graph covering objects, physical I/O,
+  DNP3 points/device status, Modbus server/scanner mappings, Browser Lists, and data logs.
+- Object creation clones complete native rows, allocates sequence/protocol IDs, creates or
+  patches dependent rows atomically, and rejects unresolved or mismatched references.
+- Strict imports perform a native baseline export and post-import export. Newly requested
+  semantic entities must survive that round trip; a zero-error DTM log no longer masks a
+  silently omitted object.
+- Native exports and Replace-all imports are not universally symmetric. In particular,
+  stale Browser rows and workbooks from a different project state can be rejected. Clients
+  must author from an export of the exact source PRJ and heed relationship diagnostics.
+
 0. **Run the final big test** (above) and **commit the uncommitted batch**.
 1. **Advanced SFC**: mine the spec's `linkSFC` directed-link pin-coordinate rules (in
    `_docspec/UDEXMLUnityProIECLanguages.txt`), then build-validate alternative + parallel

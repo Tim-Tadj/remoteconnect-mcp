@@ -28,7 +28,13 @@ from .remoteconnect import (
     read_feedback,
     read_import_report,
 )
-from .bulk_edit import BulkEditError, create_workbook_copy, inspect_workbook
+from .bulk_edit import (
+    BulkEditError,
+    create_objects_copy,
+    create_workbook_copy,
+    inspect_relationships,
+    inspect_workbook,
+)
 from .native_bridge import (
     NativeBridgeError,
     create_configuration_project,
@@ -74,7 +80,7 @@ mcp = FastMCP(
 
 # FastMCP doesn't forward a version to the low-level server, so its serverInfo
 # would otherwise report the mcp SDK version; set the real package version.
-mcp._mcp_server.version = "0.14.0"
+mcp._mcp_server.version = "0.15.0"
 
 ce = ControlExpertBridge()
 mb = ModbusClient()
@@ -200,6 +206,22 @@ def inspect_remoteconnect_bulk_edit_workbook(
 
 
 @mcp.tool()
+def inspect_remoteconnect_configuration_relationships(
+    path: str, max_issues: int = 200
+) -> dict:
+    """Validate primary keys and every known cross-sheet XLS relationship.
+
+    Checks object, physical-I/O, DNP3, Modbus device/scanner, and Browser List
+    foreign keys, uniqueness, and object-name/sequence-ID agreement before the
+    workbook reaches the native DTM importer.
+    """
+    try:
+        return inspect_relationships(path, max_issues=max_issues)
+    except BulkEditError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool()
 def create_remoteconnect_bulk_edit_copy(
     template_path: str,
     output_path: str,
@@ -224,6 +246,31 @@ def create_remoteconnect_bulk_edit_copy(
             patches,
             additions=additions,
             overwrite=overwrite,
+        )
+    except (BulkEditError, OSError) as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool()
+def create_remoteconnect_objects_copy(
+    template_path: str,
+    output_path: str,
+    objects: list[dict],
+    overwrite: bool = False,
+) -> dict:
+    """Create x70 objects and their dependent table relationships atomically.
+
+    Each object requires name and an existing compatible prototype. Optional
+    values override object fields. relationships may bind it to a Browser List,
+    Modbus server status, Modbus scanner point, physical-I/O channel, DNP3 device
+    status, DNP3 point, or existing data log. Sequence IDs are allocated
+    automatically; scanner ranges expand when necessary. The produced workbook
+    must pass cross-sheet validation and should then be applied with the strict
+    native DTM import tool.
+    """
+    try:
+        return create_objects_copy(
+            template_path, output_path, objects, overwrite=overwrite
         )
     except (BulkEditError, OSError) as exc:
         raise ValueError(str(exc)) from exc

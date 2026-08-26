@@ -31,7 +31,7 @@ internal sealed class HeadlessEnvironment : IEnvironment
     }
 
     public string ApplicationName { get { return "RemoteConnect MCP"; } }
-    public string ApplicationVersion { get { return "0.14.0"; } }
+    public string ApplicationVersion { get { return "0.15.0"; } }
     public string ApplicationManufacturer { get { return "Schneider Electric"; } }
     public string BaseDirectory { get; private set; }
     public string CommonApplicationDataPath { get; private set; }

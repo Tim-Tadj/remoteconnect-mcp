@@ -13,7 +13,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from .bulk_edit import inspect_workbook
+from .bulk_edit import BulkEditError, compare_configuration_delta, inspect_workbook
 from .remoteconnect import discover_bundle, read_import_report
 
 
@@ -228,10 +228,54 @@ def import_configuration_copy(
         workbook_copy = staging / workbook.name
         shutil.copy2(source, project_copy)
         shutil.copy2(workbook, workbook_copy)
+        baseline_workbook = staging / "baseline-export.xls"
+        baseline_native = _run(project_copy, "--export", baseline_workbook)
+        inspect_workbook(str(baseline_workbook), limit=0)
         native = _run(project_copy, "--import", workbook_copy)
         report_path = workbook_copy.with_suffix(".import.log.txt")
         report = read_import_report(str(report_path))
-        clean = bool(native.get("imported")) and not native.get("canceled", False) and report["ok"]
+        verification: dict = {"attempted": False, "ok": False}
+        accepted = bool(native.get("imported")) and not native.get("canceled", False) and report["ok"]
+        if accepted:
+            verification["attempted"] = True
+            verification_workbook = staging / "verification-export.xls"
+            try:
+                verification_native = _run(project_copy, "--export", verification_workbook)
+                verification_schema = inspect_workbook(str(verification_workbook), limit=0)
+                semantic = compare_configuration_delta(
+                    str(baseline_workbook),
+                    str(workbook_copy),
+                    str(verification_workbook),
+                )
+                verification.update({
+                    "ok": semantic["ok"],
+                    "baseline_native": baseline_native,
+                    "native": verification_native,
+                    "sheet_count": len(verification_schema["sheets"]),
+                    "semantic": semantic,
+                })
+                if not semantic["ok"]:
+                    report["events"].append({
+                        "severity": "error",
+                        "object": None,
+                        "message": "Post-import verification found missing configuration entities or relationships.",
+                        "file": str(workbook),
+                        "line": None,
+                    })
+                    report["summary"]["error"] = report["summary"].get("error", 0) + 1
+                    report["ok"] = False
+            except (NativeBridgeError, BulkEditError, OSError, subprocess.SubprocessError) as exc:
+                verification["error"] = str(exc)
+                report["events"].append({
+                    "severity": "error",
+                    "object": None,
+                    "message": "Post-import verification export failed: " + str(exc),
+                    "file": str(workbook),
+                    "line": None,
+                })
+                report["summary"]["error"] = report["summary"].get("error", 0) + 1
+                report["ok"] = False
+        clean = accepted and verification["ok"]
         published = clean or not require_clean
         if published:
             output.parent.mkdir(parents=True, exist_ok=True)
@@ -243,6 +287,7 @@ def import_configuration_copy(
         "published": published,
         "require_clean": require_clean,
         "native": native,
+        "verification_export": verification,
         "feedback": report,
         "source_modified": False,
         "ok": clean,

@@ -15,6 +15,7 @@ AI agent ──MCP/stdio──> remoteconnect-mcp ──COM/UDE──> UnitySoCo
 
 - **Complete RemoteConnect projects**: create a paired `.PRJ`/`.STU` project from scratch, including the CommDTM → x70 topology, variables, ST logic, a clean full build, and optional native configuration XLS import
 - **x70 configuration**: headlessly export the native 25-sheet RemoteConnect XLS, patch typed fields, import to a new PRJ copy, parse per-object errors, save, and reopen; source projects are never modified
+- **Relationship-aware objects**: clone native object prototypes together with Browser, physical-I/O, DNP3, Modbus-server, or Modbus-scanner links; validate cross-sheet keys and prove requested additions survived a native post-import re-export
 - **Logic projects**: create SCADAPack47x/57x/1070 UnitySoControl projects or standard Control Expert projects, open/save `.stu`/`.sta`, and import/export `.xef`/`.zef`
 - **Browse**: tasks, sections, variables, DFB/DDT types, CPU/hardware info, build state
 - **Program**: create/read/delete sections in **ST, LD, FBD, SFC, IL**; write logic by importing Control Expert XML (the AI reads an existing section's XML once and mirrors the schema — validated round-trip for all five languages)
@@ -112,7 +113,9 @@ claude mcp add control-expert -- C:\path\to\control-expert-mcp\.venv\Scripts\pyt
 | `read_remoteconnect_feedback` | Parse Object Bulk Edit logs into per-object changes, warnings, errors, and an `ok` result |
 | `read_remoteconnect_import_report` | Parse direct x70 XLS-import diagnostics (including UTF-16 table/row errors) |
 | `inspect_remoteconnect_bulk_edit_workbook` | Read native RemoteConnect `.xls` sheets, stable field names, metadata, and rows |
+| `inspect_remoteconnect_configuration_relationships` | Validate native object/table keys and Browser, physical-I/O, DNP3, Modbus-server, and scanner relationships |
 | `create_remoteconnect_bulk_edit_copy` | Update exact rows or clone a complete object row with field overrides into a new `.xls` copy |
+| `create_remoteconnect_objects_copy` | Create objects plus typed dependent relationships by cloning compatible native rows and allocating IDs |
 | `create_remoteconnect_configuration_project` | Create a blank CommDTM → x70 `.PRJ` from the installed DTM catalog; save and reopen headlessly |
 | `create_remoteconnect_project` | Create a paired `.PRJ/.STU`, optional native configuration, variables/ST, full build, and publish only a clean result |
 | `export_remoteconnect_configuration` | Directly export the x70 DTM's native 25-sheet XLS from a temporary PRJ copy |

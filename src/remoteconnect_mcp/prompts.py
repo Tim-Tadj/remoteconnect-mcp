@@ -29,12 +29,17 @@ def register_prompts(mcp) -> None:
             "and every configuration record group without deserializing proprietary payloads.\n"
             "3. Call export_remoteconnect_configuration to create the DTM's native XLS from a "
             "temporary project copy, then inspect its stable row-2 fields.\n"
-            "4. Call create_remoteconnect_bulk_edit_copy. Use patches for existing rows. To add "
-            "an object, clone exactly one compatible row and override its name/fields; required "
-            "hidden fields are retained.\n"
+            "4. Call inspect_remoteconnect_configuration_relationships on the export. For plain "
+            "field edits use create_remoteconnect_bulk_edit_copy. For object creation call "
+            "create_remoteconnect_objects_copy with a compatible prototype and explicit browser, "
+            "physical-I/O, DNP3, or Modbus relationships. It allocates IDs, clones all required "
+            "native rows, and validates their foreign keys. Always use an XLS exported from the "
+            "exact PRJ that will be the import source; Replace-all workbooks are project-specific.\n"
             "5. Call apply_remoteconnect_configuration_copy with require_clean=true. It invokes "
             "the x70 DTM directly, parses its UTF-16 report, saves/reopens, and publishes a new "
-            "PRJ only when ok=true. Repair per-object errors and repeat. No UI automation is used."
+            "PRJ only when ok=true. A post-import native re-export also verifies that requested "
+            "additions really survived; a zero-error DTM log alone is not sufficient. Repair "
+            "per-object errors and repeat. No UI automation is used."
         )
 
     @mcp.prompt()
