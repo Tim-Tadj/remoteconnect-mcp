@@ -105,6 +105,8 @@ claude mcp add control-expert -- C:\path\to\control-expert-mcp\.venv\Scripts\pyt
 | `read_remoteconnect_feedback` | Parse Object Bulk Edit logs into per-object changes, warnings, errors, and an `ok` result |
 | `inspect_remoteconnect_bulk_edit_workbook` | Read native RemoteConnect `.xls` sheets, stable field names, metadata, and rows |
 | `create_remoteconnect_bulk_edit_copy` | Apply exact-row typed patches to a new `.xls` copy and structurally reopen it |
+| `get_remoteconnect_ui_status` | Read the running RemoteConnect project title and controller DTM as an import safety guard |
+| `import_remoteconnect_bulk_edit_workbook` | Guarded native Excel import into the open project, followed by structured feedback capture; does not save |
 | `open_remoteconnect_logic` | Open a bundle's paired UnitySoControl logic file using the configured OEM context |
 | `build_remoteconnect_logic_copy` | Add variables/ST, full rebuild, and save only a clean result to a new `.STU` copy |
 | `open_project` | Open `.stu` / `.sta` / `.xef` / `.zef` |

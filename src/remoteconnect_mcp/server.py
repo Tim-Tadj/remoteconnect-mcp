@@ -19,6 +19,7 @@ from .prompts import register_prompts
 from . import schema as ce_schema
 from .remoteconnect import discover_bundle, inspect_project, inventory_project, read_feedback
 from .bulk_edit import BulkEditError, create_workbook_copy, inspect_workbook
+from .ui_automation import RemoteConnectUiError, import_excel, ui_status
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,7 +53,7 @@ mcp = FastMCP(
 
 # FastMCP doesn't forward a version to the low-level server, so its serverInfo
 # would otherwise report the mcp SDK version; set the real package version.
-mcp._mcp_server.version = "0.11.0"
+mcp._mcp_server.version = "0.12.0"
 
 ce = ControlExpertBridge()
 mb = ModbusClient()
@@ -198,6 +199,45 @@ def create_remoteconnect_bulk_edit_copy(
             template_path, output_path, patches, overwrite=overwrite
         )
     except (BulkEditError, OSError) as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool()
+def get_remoteconnect_ui_status() -> dict:
+    """Inspect the running RemoteConnect UI and identify the open project/DTM.
+
+    Call before native import. The returned project_title must be passed back as
+    expected_project_title so an AI client cannot accidentally target another
+    project after the UI state changes.
+    """
+    try:
+        return ui_status()
+    except RemoteConnectUiError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool()
+def import_remoteconnect_bulk_edit_workbook(
+    workbook_path: str,
+    expected_project_title: str,
+    confirm_import: bool = False,
+    timeout_seconds: int = 300,
+) -> dict:
+    """Import an XLS through RemoteConnect's native DeviceDTM function.
+
+    This changes the currently open project but does not save it. First call
+    get_remoteconnect_ui_status and pass its exact project_title as the guard.
+    confirm_import must explicitly be true. Returns newly generated structured
+    Object Bulk Edit feedback when RemoteConnect creates a log.
+    """
+    try:
+        return import_excel(
+            workbook_path,
+            expected_project_title,
+            confirm_import=confirm_import,
+            timeout_seconds=timeout_seconds,
+        )
+    except RemoteConnectUiError as exc:
         raise ValueError(str(exc)) from exc
 
 
