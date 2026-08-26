@@ -423,10 +423,20 @@ class ControlExpertBridge:
 
         self._do_close(False)
         broker = self._broker()
-        ctx = win32com.client.Dispatch("PServerBroker.PServerBrokerContext.1")
-        ctx.XpdfContext = xpdf_context
+        if not os.path.isfile(xpdf_context):
+            raise CEError(f"SCADAPack XPDF context file not found: {xpdf_context}")
+        ctx = win32com.client.Dispatch(BROKER_CONTEXT_PROGID)
+        # The COM property takes the encrypted XPDF buffer, not its filename.
+        ctx.XpdfContext = _read_text_file(xpdf_context)
+        if LIBSET_VERSION:
+            ctx.LibSetVersion = LIBSET_VERSION
         # [out] ppApp is mapped to the return value by pywin32.
-        self._app = broker.NewApplicationWithPServerBrokerContext(ctx)
+        result = broker.NewApplicationWithPServerBrokerContext(ctx)
+        if isinstance(result, tuple):
+            result = next((item for item in result if item is not None), None)
+        if result is None:
+            raise CEError("The SCADAPack broker returned no application object.")
+        self._app = result
         if settings_xso:
             xso_path = self._temp_path(".xso")
             with open(xso_path, "w", encoding="utf-8") as fh:

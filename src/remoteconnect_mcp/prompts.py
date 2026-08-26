@@ -27,18 +27,30 @@ def register_prompts(mcp) -> None:
             "1. Call inspect_remoteconnect_project(path) to locate the complete PRJ/STU bundle.\n"
             "2. Call inventory_remoteconnect_configuration(path) to enumerate DTM topology IDs "
             "and every configuration record group without deserializing proprietary payloads.\n"
-            "3. After an Object Bulk Edit operation, call read_remoteconnect_feedback(). Treat "
-            "ok=false or any severity='error' event as a failed validation. Review warnings, "
-            "including values RemoteConnect corrected automatically, before accepting a copy.\n"
-            "4. Use object names and source file/line fields from feedback to repair the input "
-            "and repeat until there are no errors.\n\n"
-            "To prepare a supported configuration change, inspect a RemoteConnect-exported XLS "
-            "with inspect_remoteconnect_bulk_edit_workbook, then call "
-            "create_remoteconnect_bulk_edit_copy using exact row-2 machine field names. Import "
-            "Import the generated workbook through a supported programmatic FDT/DTM service "
-            "when one is configured; UI automation is intentionally not included. After import, "
-            "never accept the result if feedback contains errors and review automatic corrections. Logic "
-            "writes remain copy-only through build_remoteconnect_logic_copy."
+            "3. Call export_remoteconnect_configuration to create the DTM's native XLS from a "
+            "temporary project copy, then inspect its stable row-2 fields.\n"
+            "4. Call create_remoteconnect_bulk_edit_copy. Use patches for existing rows. To add "
+            "an object, clone exactly one compatible row and override its name/fields; required "
+            "hidden fields are retained.\n"
+            "5. Call apply_remoteconnect_configuration_copy with require_clean=true. It invokes "
+            "the x70 DTM directly, parses its UTF-16 report, saves/reopens, and publishes a new "
+            "PRJ only when ok=true. Repair per-object errors and repeat. No UI automation is used."
+        )
+
+    @mcp.prompt()
+    def create_complete_remoteconnect_project() -> str:
+        """Create configuration and clean-built logic as a paired project."""
+        return (
+            "Goal: create a complete RemoteConnect application from scratch.\n\n"
+            "1. Ensure CE_MCP_XPDF_CONTEXT points to SCBForSCADAPack.xpdf.\n"
+            "2. Call create_remoteconnect_project with a new .prj path, the installed platform "
+            "(SCADAPack47x/57x/1070), variables, and ST source. Optionally pass a native XLS.\n"
+            "3. Accept the result only when ok=true, published=true, the DTM topology reopened "
+            "with two DTMs, and build.build_state is built_ok. The matching .stu is published "
+            "beside the .prj.\n"
+            "4. For LD/FBD/SFC/IL additions, open the generated .stu, call the appropriate "
+            "language reference, import the section XML, rebuild, and save a reviewed copy.\n\n"
+            "The operation is headless and template-free; staged files are discarded on failure."
         )
 
     @mcp.prompt()

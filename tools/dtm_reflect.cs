@@ -64,6 +64,14 @@ internal static class DtmReflect
         BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
         foreach (ConstructorInfo ctor in type.GetConstructors(flags))
             Console.WriteLine("  ctor(" + String.Join(", ", ctor.GetParameters().Select(p => TypeName(p.ParameterType) + " " + p.Name).ToArray()) + ")");
+        foreach (FieldInfo field in type.GetFields(flags))
+        {
+            object value = null;
+            try { if (field.IsLiteral) value = field.GetRawConstantValue(); }
+            catch { }
+            Console.WriteLine("  field " + TypeName(field.FieldType) + " " + field.Name +
+                (value == null ? "" : "=" + value));
+        }
         foreach (PropertyInfo property in type.GetProperties(flags))
             Console.WriteLine("  property " + TypeName(property.PropertyType) + " " + property.Name +
                 "[" + String.Join(", ", property.GetIndexParameters().Select(p => TypeName(p.ParameterType) + " " + p.Name).ToArray()) + "]");
@@ -88,6 +96,8 @@ internal static class DtmReflect
         AppDomain.CurrentDomain.ReflectionOnlyAssemblyResolve += ResolveReflectionOnly;
         Assembly assembly = Assembly.ReflectionOnlyLoadFrom(assemblyPath);
         string filter = args[1];
+        bool exact = filter.StartsWith("=", StringComparison.Ordinal);
+        if (exact) filter = filter.Substring(1);
         Type[] types;
         try { types = assembly.GetTypes(); }
         catch (ReflectionTypeLoadException exc)
@@ -95,7 +105,9 @@ internal static class DtmReflect
             types = exc.Types.Where(t => t != null).ToArray();
             foreach (Exception loader in exc.LoaderExceptions) Console.Error.WriteLine("LOADER " + loader.Message);
         }
-        foreach (Type type in types.Where(t => Matches(t, filter)))
+        foreach (Type type in types.Where(t => exact
+            ? String.Equals(t.FullName, filter, StringComparison.Ordinal)
+            : Matches(t, filter)))
             PrintType(type);
         return 0;
     }

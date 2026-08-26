@@ -207,3 +207,71 @@ def read_feedback(
         "summary": dict(sorted(counts.items())),
         "ok": counts["error"] == 0,
     }
+
+
+_TABLE_VALIDATION = re.compile(
+    r"^(?P<object>.+?)\s+Table Validation Error\(s\)\s*-\s*Row\s+(?P<row>\d+)\s*$",
+    re.IGNORECASE,
+)
+_ROW_VALIDATION = re.compile(r"^(?P<object>.+?):(?P<message>.+?)\s+at row \[(?P<row>\d+)\]\.?$", re.IGNORECASE)
+
+
+def read_import_report(log_path: str) -> dict:
+    """Parse the UTF-16 report produced by the x70 DTM's direct XLS importer."""
+    source = Path(log_path).expanduser().resolve()
+    if not source.is_file():
+        raise FileNotFoundError(f"Import report not found: {source}")
+    raw = source.read_bytes()
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")) or b"\x00" in raw[:100]:
+        text = raw.decode("utf-16", errors="replace")
+    else:
+        text = raw.decode("utf-8-sig", errors="replace")
+
+    lines = [(number, value.strip()) for number, value in enumerate(text.splitlines(), 1) if value.strip()]
+    events: list[dict] = []
+    counts: Counter[str] = Counter()
+    index = 0
+    while index < len(lines):
+        line_number, line = lines[index]
+        table = _TABLE_VALIDATION.match(line)
+        row_error = _ROW_VALIDATION.match(line)
+        if table:
+            detail = ""
+            if index + 1 < len(lines) and not _TABLE_VALIDATION.match(lines[index + 1][1]):
+                detail = lines[index + 1][1]
+                index += 1
+            event = {
+                "severity": "error",
+                "object": table.group("object"),
+                "row": int(table.group("row")),
+                "message": detail or line,
+                "file": str(source),
+                "line": line_number,
+            }
+        elif row_error:
+            event = {
+                "severity": "error",
+                "object": row_error.group("object"),
+                "row": int(row_error.group("row")),
+                "message": row_error.group("message").strip(),
+                "file": str(source),
+                "line": line_number,
+            }
+        else:
+            severity = _classify_feedback(line)
+            event = {
+                "severity": severity,
+                "object": None,
+                "message": line,
+                "file": str(source),
+                "line": line_number,
+            }
+        counts[event["severity"]] += 1
+        events.append(event)
+        index += 1
+    return {
+        "source": str(source),
+        "events": events,
+        "summary": dict(sorted(counts.items())),
+        "ok": counts["error"] == 0,
+    }

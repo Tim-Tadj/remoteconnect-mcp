@@ -2,7 +2,8 @@
 
 An MCP server for Schneider Electric **RemoteConnect** and its SCADAPack x70
 **UnitySoControl** logic editor. It discovers paired `.PRJ/.RCZ/.STU/.STA`
-files and lets AI agents inspect, edit, rebuild, and save IEC logic safely.
+files and lets AI agents create, inspect, configure, program, rebuild, and save
+complete RemoteConnect projects without UI automation.
 
 Inspired by [tiaportal-mcp](https://github.com/heilingbrunner/tiaportal-mcp) for Siemens TIA Portal. Where TIA Portal exposes the Openness API, Control Expert exposes the **Unity Developer's Edition (UDE) COM automation server** (`PSBroker.PServerBroker`) — this server drives it through `pywin32` and exposes it as MCP tools over stdio.
 
@@ -12,7 +13,9 @@ AI agent ──MCP/stdio──> remoteconnect-mcp ──COM/UDE──> UnitySoCo
 
 ## What the AI can do
 
-- **Projects**: create from scratch for any CPU in the hardware catalog (M340, M580, Premium, Quantum...), open/save `.stu`/`.sta`, import/export `.xef`/`.zef`
+- **Complete RemoteConnect projects**: create a paired `.PRJ`/`.STU` project from scratch, including the CommDTM → x70 topology, variables, ST logic, a clean full build, and optional native configuration XLS import
+- **x70 configuration**: headlessly export the native 25-sheet RemoteConnect XLS, patch typed fields, import to a new PRJ copy, parse per-object errors, save, and reopen; source projects are never modified
+- **Logic projects**: create SCADAPack47x/57x/1070 UnitySoControl projects or standard Control Expert projects, open/save `.stu`/`.sta`, and import/export `.xef`/`.zef`
 - **Browse**: tasks, sections, variables, DFB/DDT types, CPU/hardware info, build state
 - **Program**: create/read/delete sections in **ST, LD, FBD, SFC, IL**; write logic by importing Control Expert XML (the AI reads an existing section's XML once and mirrors the schema — validated round-trip for all five languages)
 - **Hardware**: walk the full bus → drop → rack → module topology, **add/remove IO modules** by catalog part number, change the CPU
@@ -55,8 +58,12 @@ $env:CE_MCP_XPDF_CONTEXT = "C:\ProgramData\Schneider Electric\CommonControlExper
 
 Use `inspect_remoteconnect_project` with any member of the bundle to discover
 the paired files, then `open_remoteconnect_logic` to open the logic project.
-The `.PRJ` inspector is read-only and intentionally does not deserialize or
-rewrite opaque DTM engineering data.
+Use `create_remoteconnect_project` to create a complete pair, or
+`create_remoteconnect_configuration_project` for only the FDT configuration.
+These tools use the installed 32-bit FDT/DTM runtime directly; RemoteConnect is
+not launched or automated. Writes are staged and published only after save and
+reopen validation. The XML `.PRJ` inspector remains read-only and never
+deserializes opaque DTM engineering data.
 
 ### Claude Desktop
 
@@ -103,8 +110,13 @@ claude mcp add control-expert -- C:\path\to\control-expert-mcp\.venv\Scripts\pyt
 | `inspect_remoteconnect_project` | Read-only discovery and summary of paired RemoteConnect `.PRJ/.RCZ/.STU/.STA` files |
 | `inventory_remoteconnect_configuration` | Read-only FDT/DTM topology and configuration-record inventory; never deserializes opaque vendor payloads |
 | `read_remoteconnect_feedback` | Parse Object Bulk Edit logs into per-object changes, warnings, errors, and an `ok` result |
+| `read_remoteconnect_import_report` | Parse direct x70 XLS-import diagnostics (including UTF-16 table/row errors) |
 | `inspect_remoteconnect_bulk_edit_workbook` | Read native RemoteConnect `.xls` sheets, stable field names, metadata, and rows |
-| `create_remoteconnect_bulk_edit_copy` | Apply exact-row typed patches to a new `.xls` copy and structurally reopen it |
+| `create_remoteconnect_bulk_edit_copy` | Update exact rows or clone a complete object row with field overrides into a new `.xls` copy |
+| `create_remoteconnect_configuration_project` | Create a blank CommDTM → x70 `.PRJ` from the installed DTM catalog; save and reopen headlessly |
+| `create_remoteconnect_project` | Create a paired `.PRJ/.STU`, optional native configuration, variables/ST, full build, and publish only a clean result |
+| `export_remoteconnect_configuration` | Directly export the x70 DTM's native 25-sheet XLS from a temporary PRJ copy |
+| `apply_remoteconnect_configuration_copy` | Directly import XLS into a new PRJ, parse feedback, save/reopen, and withhold output on errors by default |
 | `open_remoteconnect_logic` | Open a bundle's paired UnitySoControl logic file using the configured OEM context |
 | `build_remoteconnect_logic_copy` | Add variables/ST, full rebuild, and save only a clean result to a new `.STU` copy |
 | `open_project` | Open `.stu` / `.sta` / `.xef` / `.zef` |

@@ -83,11 +83,12 @@ def _normalize(value):
 def create_workbook_copy(
     template_path: str,
     output_path: str,
-    patches: list[dict],
+    patches: list[dict] | None = None,
     *,
+    additions: list[dict] | None = None,
     overwrite: bool = False,
 ) -> dict:
-    """Patch rows by stable machine field names and save a separate XLS copy."""
+    """Patch or clone rows by stable machine fields into a separate XLS copy."""
     source, readable = _open(template_path, formatting=True)
     output = Path(output_path).expanduser().resolve()
     if output.suffix.lower() != ".xls":
@@ -96,14 +97,14 @@ def create_workbook_copy(
         raise BulkEditError("output_path must differ from template_path")
     if output.exists() and not overwrite:
         raise BulkEditError(f"Output exists (set overwrite=true to replace it): {output}")
-    if not patches:
-        raise BulkEditError("patches must contain at least one patch")
+    if not patches and not additions:
+        raise BulkEditError("At least one patch or addition is required")
 
     from xlutils.copy import copy
 
     writable = copy(readable)
     changes = []
-    for patch_index, patch in enumerate(patches):
+    for patch_index, patch in enumerate(patches or []):
         sheet_name = str(patch.get("sheet", ""))
         match = patch.get("match")
         values = patch.get("values")
@@ -144,12 +145,68 @@ def create_workbook_copy(
                 )
             out_sheet.write(row, col, new_value)
             changes.append({
+                "operation": "update",
                 "sheet": sheet_name,
                 "row": row + 1,
                 "field": field,
                 "old": old_value,
                 "new": new_value,
             })
+    next_rows: dict[str, int] = {}
+    for addition_index, addition in enumerate(additions or []):
+        sheet_name = str(addition.get("sheet", ""))
+        clone = addition.get("clone")
+        values = addition.get("values")
+        if not sheet_name or not isinstance(clone, dict) or not clone:
+            raise BulkEditError(
+                f"additions[{addition_index}] requires sheet and non-empty clone match"
+            )
+        if not isinstance(values, dict) or not values:
+            raise BulkEditError(f"additions[{addition_index}] requires non-empty values")
+        try:
+            sheet_index = readable.sheet_names().index(sheet_name)
+            sheet = readable.sheet_by_index(sheet_index)
+        except Exception as exc:
+            raise BulkEditError(
+                f"Unknown sheet in additions[{addition_index}]: {sheet_name}"
+            ) from exc
+        fields = [str(sheet.cell_value(1, col)) for col in range(sheet.ncols)]
+        columns = {field: col for col, field in enumerate(fields) if field}
+        unknown = sorted((set(clone) | set(values)) - set(columns))
+        if unknown:
+            raise BulkEditError(f"Unknown fields for sheet '{sheet_name}': {unknown}")
+        clone_rows = [
+            row
+            for row in range(2, sheet.nrows)
+            if all(
+                _normalize(sheet.cell_value(row, columns[key])) == _normalize(value)
+                for key, value in clone.items()
+            )
+        ]
+        if len(clone_rows) != 1:
+            raise BulkEditError(
+                f"Addition {addition_index} clone selected {len(clone_rows)} rows in "
+                f"'{sheet_name}'; exactly one is required"
+            )
+        source_row = clone_rows[0]
+        output_row = next_rows.get(sheet_name, sheet.nrows)
+        next_rows[sheet_name] = output_row + 1
+        out_sheet = writable.get_sheet(sheet_index)
+        for col in range(sheet.ncols):
+            field = fields[col]
+            value = values.get(field, sheet.cell_value(source_row, col))
+            if isinstance(value, (dict, list)) or value is None:
+                raise BulkEditError(
+                    f"Value for {sheet_name}.{field or col + 1} must be a string, number, or boolean"
+                )
+            out_sheet.write(output_row, col, value)
+        changes.append({
+            "operation": "add",
+            "sheet": sheet_name,
+            "row": output_row + 1,
+            "cloned_from_row": source_row + 1,
+            "values": values,
+        })
     output.parent.mkdir(parents=True, exist_ok=True)
     writable.save(str(output))
     # Reopen the produced file and verify the RemoteConnect header contract.
@@ -164,5 +221,5 @@ def create_workbook_copy(
         "change_count": len(changes),
         "verified_reopen": True,
         "metadata": verified["metadata"],
-        "next_step": "Import this copy with RemoteConnect Object Bulk Edit, then call read_remoteconnect_feedback.",
+        "next_step": "Import with apply_remoteconnect_configuration_copy; output is withheld if the DTM reports errors.",
     }

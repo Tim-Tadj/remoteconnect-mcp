@@ -8,7 +8,11 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
+from pathlib import Path
 from xml.etree import ElementTree
 
 from mcp.server.fastmcp import FastMCP
@@ -17,8 +21,20 @@ from .bridge import ControlExpertBridge
 from .modbus import ModbusClient, ModbusError, parse_address
 from .prompts import register_prompts
 from . import schema as ce_schema
-from .remoteconnect import discover_bundle, inspect_project, inventory_project, read_feedback
+from .remoteconnect import (
+    discover_bundle,
+    inspect_project,
+    inventory_project,
+    read_feedback,
+    read_import_report,
+)
 from .bulk_edit import BulkEditError, create_workbook_copy, inspect_workbook
+from .native_bridge import (
+    NativeBridgeError,
+    create_configuration_project,
+    export_configuration,
+    import_configuration_copy,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,7 +46,13 @@ log = logging.getLogger("remoteconnect-mcp")
 mcp = FastMCP(
     "RemoteConnect",
     instructions=(
-        "Automates a local EcoStruxure Control Expert (Unity Pro) installation. "
+        "Programmatically controls local Schneider Electric RemoteConnect FDT/DTMs "
+        "and its UnitySoControl logic editor; no RemoteConnect UI automation is used. "
+        "For a new complete application call create_remoteconnect_project. For x70 "
+        "configuration: export_remoteconnect_configuration -> inspect/author a typed "
+        "workbook copy -> apply_remoteconnect_configuration_copy; accept it only when "
+        "ok=true. The default strict import withholds the output PRJ on any DTM error.\n\n"
+        "Logic uses the EcoStruxure Control Expert UDE automation interface. "
         "Typical flow: open_project (or new_project) -> inspect with "
         "get_project_structure / list_variables / read_section -> edit -> "
         "build_project (its 'output' lists per-section errors; iterate until "
@@ -52,7 +74,7 @@ mcp = FastMCP(
 
 # FastMCP doesn't forward a version to the low-level server, so its serverInfo
 # would otherwise report the mcp SDK version; set the real package version.
-mcp._mcp_server.version = "0.13.0"
+mcp._mcp_server.version = "0.14.0"
 
 ce = ControlExpertBridge()
 mb = ModbusClient()
@@ -181,7 +203,8 @@ def inspect_remoteconnect_bulk_edit_workbook(
 def create_remoteconnect_bulk_edit_copy(
     template_path: str,
     output_path: str,
-    patches: list[dict],
+    patches: list[dict] | None = None,
+    additions: list[dict] | None = None,
     overwrite: bool = False,
 ) -> dict:
     """Create a patched copy of a RemoteConnect Object Bulk Edit workbook.
@@ -189,15 +212,210 @@ def create_remoteconnect_bulk_edit_copy(
     Each patch is {sheet, match, values}; match must select exactly one existing
     row using row-2 machine fields. Example: {sheet:'(20) Ethernet Ports',
     match:{Port:'Ethernet1'}, values:{IpAddress:'192.168.1.10'}}. The template
-    is never modified. The generated XLS is reopened and structurally checked;
-    RemoteConnect import plus read_remoteconnect_feedback remains the final
-    semantic validation step.
+    is never modified. additions can create an object safely by cloning exactly
+    one complete existing row and overriding fields: {sheet, clone:{...},
+    values:{Name:'NewObject', SequenceId:123}}. Hidden/required fields are
+    retained from the source row. The direct DTM import remains the semantic gate.
     """
     try:
         return create_workbook_copy(
-            template_path, output_path, patches, overwrite=overwrite
+            template_path,
+            output_path,
+            patches,
+            additions=additions,
+            overwrite=overwrite,
         )
     except (BulkEditError, OSError) as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool()
+def create_remoteconnect_configuration_project(
+    output_path: str,
+    controller: str = "SCADAPack x70",
+    overwrite: bool = False,
+) -> dict:
+    """Create a new RemoteConnect PRJ from the installed DTM catalog.
+
+    Creates and validates the CommDTM -> x70 controller topology without a
+    template and without UI automation, then saves and reopens the new PRJ.
+    """
+    try:
+        return create_configuration_project(
+            output_path, controller=controller, overwrite=overwrite
+        )
+    except (NativeBridgeError, OSError, subprocess.SubprocessError) as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool()
+def create_remoteconnect_project(
+    project_path: str,
+    platform: str,
+    task: str = "MAST",
+    section: str = "Main",
+    st_source: str = "",
+    variables: list[dict] | None = None,
+    configuration_workbook: str = "",
+    settings_xso: str = "",
+    overwrite: bool = False,
+) -> dict:
+    """Create a complete paired RemoteConnect PRJ/STU project from scratch.
+
+    project_path must end in .prj; the logic project is written beside it with
+    the same stem and a .stu suffix. platform is the installed Logic Editor
+    catalog family (SCADAPack47x, SCADAPack57x, or SCADAPack1070). The server
+    must have CE_MCP_XPDF_CONTEXT set to the installed SCADAPack xpdf file.
+    Optional variables require name/type and may include comment, address, and
+    initial_value. When st_source is supplied, it is written to task/section.
+    An optional native XLS can configure the new x70 DTM. Both outputs are
+    staged, fully rebuilt, saved, and published only after all checks pass.
+    No templates and no UI automation are used.
+    """
+    configuration_output = Path(project_path).expanduser().resolve()
+    if configuration_output.suffix.lower() != ".prj":
+        raise ValueError("project_path must end in .prj")
+    logic_output = configuration_output.with_suffix(".stu")
+    existing = [str(path) for path in (configuration_output, logic_output) if path.exists()]
+    if existing and not overwrite:
+        raise ValueError(
+            "Output exists (set overwrite=true to replace both project files): "
+            + ", ".join(existing)
+        )
+    allowed_platforms = {"SCADAPack47x", "SCADAPack57x", "SCADAPack1070"}
+    if platform not in allowed_platforms:
+        raise ValueError(f"platform must be one of {sorted(allowed_platforms)}")
+    xpdf_context = os.environ.get("CE_MCP_XPDF_CONTEXT", "").strip()
+    if not xpdf_context or not os.path.isfile(xpdf_context):
+        raise ValueError(
+            "CE_MCP_XPDF_CONTEXT must point to the installed SCADAPack .xpdf file "
+            "before the MCP server starts"
+        )
+
+    created_variables: list[dict] = []
+    with tempfile.TemporaryDirectory(prefix="remoteconnect-full-project-") as temporary:
+        stage = Path(temporary)
+        staged_configuration = stage / configuration_output.name
+        staged_logic = stage / logic_output.name
+        configuration = create_configuration_project(str(staged_configuration))
+        if configuration_workbook:
+            imported_configuration = stage / (configuration_output.stem + "-configured.prj")
+            imported = import_configuration_copy(
+                str(staged_configuration),
+                configuration_workbook,
+                str(imported_configuration),
+                require_clean=True,
+            )
+            if not imported["ok"] or not imported["published"]:
+                return {
+                    "ok": False,
+                    "published": False,
+                    "configuration": configuration,
+                    "configuration_import": imported,
+                    "reason": "The x70 DTM reported configuration errors; no project files were published.",
+                }
+            staged_configuration = imported_configuration
+        else:
+            imported = None
+
+        try:
+            logic = ce.new_logic_editor_project(
+                platform, xpdf_context, settings_xso or None
+            )
+            for index, spec in enumerate(variables or []):
+                if not spec.get("name") or not spec.get("type"):
+                    raise ValueError(f"variables[{index}] requires non-empty name and type")
+                created_variables.append(ce.create_variable(
+                    str(spec["name"]),
+                    str(spec["type"]),
+                    spec.get("comment"),
+                    spec.get("address"),
+                    spec.get("initial_value"),
+                ))
+            written = None
+            if st_source.strip():
+                written = ce.write_st_logic(task, section, st_source, None)
+            build = ce.build_project(True)
+            if build.get("build_state") != "built_ok":
+                raise RuntimeError(f"Logic build did not succeed: {build}")
+            saved = ce.save_project(str(staged_logic))
+        finally:
+            ce.close_project(False)
+
+        if not staged_configuration.is_file() or not staged_logic.is_file():
+            raise RuntimeError("Staged RemoteConnect project pair is incomplete")
+        configuration_output.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(staged_logic, logic_output)
+        shutil.copy2(staged_configuration, configuration_output)
+
+    return {
+        "ok": True,
+        "published": True,
+        "configuration_path": str(configuration_output),
+        "logic_path": str(logic_output),
+        "platform": platform,
+        "configuration": configuration,
+        "configuration_import": imported,
+        "logic": logic,
+        "variables": created_variables,
+        "section": written,
+        "build": build,
+        "saved": saved,
+        "headless": True,
+        "ui_automation": False,
+        "template_used": False,
+    }
+
+
+@mcp.tool()
+def export_remoteconnect_configuration(
+    source_path: str, output_path: str, overwrite: bool = False
+) -> dict:
+    """Export the x70 controller configuration to a native RemoteConnect XLS.
+
+    Uses the installed FDT/DTM APIs headlessly; it does not launch, click, or
+    automate RemoteConnect. The source PRJ is copied to temporary storage before
+    the DTM is opened, so this read operation cannot rewrite the source project.
+    """
+    try:
+        return export_configuration(source_path, output_path, overwrite=overwrite)
+    except (NativeBridgeError, BulkEditError, OSError, subprocess.SubprocessError) as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool()
+def apply_remoteconnect_configuration_copy(
+    source_path: str,
+    workbook_path: str,
+    output_path: str,
+    overwrite: bool = False,
+    require_clean: bool = True,
+) -> dict:
+    """Import a native x70 configuration XLS and save a new PRJ copy.
+
+    This is a fully programmatic FDT/DTM operation with no UI automation. The
+    source is immutable. Import feedback is parsed into structured per-object
+    errors; with require_clean=true (the default), the output is not published
+    unless the DTM accepts the workbook, reports no errors, saves, and reopens.
+    """
+    try:
+        return import_configuration_copy(
+            source_path,
+            workbook_path,
+            output_path,
+            overwrite=overwrite,
+            require_clean=require_clean,
+        )
+    except (NativeBridgeError, BulkEditError, OSError, subprocess.SubprocessError) as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool()
+def read_remoteconnect_import_report(log_path: str) -> dict:
+    """Parse the UTF-16 diagnostic report from a headless x70 XLS import."""
+    try:
+        return read_import_report(log_path)
+    except (FileNotFoundError, OSError) as exc:
         raise ValueError(str(exc)) from exc
 
 

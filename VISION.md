@@ -133,7 +133,7 @@ the simulator, and read/write live values — guided the whole way.
 
 ## Roadmap (next)
 
-### RemoteConnect programmatic DTM bridge (in progress)
+### RemoteConnect programmatic DTM bridge (implemented in v0.14.0)
 
 - UI automation was removed in v0.13.0; this bridge uses only the installed FDT/DTM APIs.
 - Confirmed project path: `IProjectService.Open` -> `IFrameProject.DTMs` ->
@@ -142,12 +142,14 @@ the simulator, and read/write live values — guided the whole way.
   `ExecuteCommandFunction(...)`, with completion/error feedback from DTM proxy events.
 - Confirmed x70 implementation: `CommandFunctionProvider` contains direct, non-dialog
   Excel validation/import/export operations.
-- The SDK `ProjectService` has no usable parameterless constructor. The next implementation
-  step is a minimal Unity/runtime-frame bootstrap using the installed `Project.config`, then
-  open/import/save/close against an automatically-created project copy.
-- `tools/dtm_reflect.cs` and `tools/dtm_headless_probe.cs` are reproducible discovery probes;
-  the latter currently proves that dependency bootstrap is required and must not be exposed
-  as an MCP mutation tool until copy/open/save validation passes.
+- The packaged 32-bit headless runtime now creates and reopens projects, builds the installed
+  CommDTM → x70 topology from the DTM catalog, directly exports/imports the native XLS, and
+  returns structured import diagnostics. All writes are copy-only and UI automation is absent.
+- `create_remoteconnect_project` composes that configuration with a newly-created SCADAPack
+  UnitySoControl project, variables/ST logic, and a required clean full build before publishing
+  the paired PRJ/STU files.
+- `tools/dtm_reflect.cs` remains the discovery probe; the production native source is packaged
+  at `src/remoteconnect_mcp/native/RemoteConnectBridge.cs` and compiled/cached on demand.
 
 0. **Run the final big test** (above) and **commit the uncommitted batch**.
 1. **Advanced SFC**: mine the spec's `linkSFC` directed-link pin-coordinate rules (in
