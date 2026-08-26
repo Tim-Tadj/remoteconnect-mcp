@@ -35,10 +35,9 @@ def register_prompts(mcp) -> None:
             "To prepare a supported configuration change, inspect a RemoteConnect-exported XLS "
             "with inspect_remoteconnect_bulk_edit_workbook, then call "
             "create_remoteconnect_bulk_edit_copy using exact row-2 machine field names. Import "
-            "the generated copy with import_remoteconnect_bulk_edit_workbook: first call "
-            "get_remoteconnect_ui_status, pass its project_title back as the guard, and set "
-            "confirm_import=true only after confirming the intended project is open. Never "
-            "accept the result if feedback contains errors; review automatic corrections. Logic "
+            "Import the generated workbook through a supported programmatic FDT/DTM service "
+            "when one is configured; UI automation is intentionally not included. After import, "
+            "never accept the result if feedback contains errors and review automatic corrections. Logic "
             "writes remain copy-only through build_remoteconnect_logic_copy."
         )
 
