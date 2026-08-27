@@ -13,7 +13,7 @@ AI agent ──MCP/stdio──> remoteconnect-mcp ──COM/UDE──> UnitySoCo
 
 ## What the AI can do
 
-- **Complete RemoteConnect projects**: create a paired `.PRJ`/`.STU` project from scratch, including the CommDTM → x70 topology, variables, ST logic, a clean full build, and optional native configuration XLS import
+- **Complete RemoteConnect projects**: create a paired `.PRJ`/`.STU` project from scratch, including the CommDTM → x70 topology, automatic exact-DDT synchronization of configuration objects into logic variables, ST logic, a clean full build, and optional native configuration XLS import
 - **x70 configuration**: headlessly export the native 25-sheet RemoteConnect XLS, patch typed fields, import to a new PRJ copy, parse per-object errors, save, and reopen; source projects are never modified
 - **Relationship-aware objects**: clone native object prototypes together with Browser, physical-I/O, DNP3, Modbus-server, or Modbus-scanner links; validate cross-sheet keys and prove requested additions survived a native post-import re-export
 - **Typed parent creation**: create Browser Lists, data logs, Modbus/TCP devices and scanners, and DNP3 controlling-station devices and points—even when their native XLS tables start empty—then attach objects in the same staged workbook
@@ -121,7 +121,7 @@ claude mcp add control-expert -- C:\path\to\control-expert-mcp\.venv\Scripts\pyt
 | `create_remoteconnect_parent_entities_copy` | Typed creation of Browser Lists, logs, Modbus devices/scanners, and DNP3 devices/points with allocated IDs; data logs enable the project-level logging switch |
 | `create_remoteconnect_objects_copy` | Create objects plus typed dependent relationships by cloning compatible native rows and allocating IDs |
 | `create_remoteconnect_configuration_project` | Create a blank CommDTM → x70 `.PRJ` from the installed DTM catalog; save and reopen headlessly |
-| `create_remoteconnect_project` | Create a paired `.PRJ/.STU`, optional native configuration, variables/ST, full build, and publish only a clean result |
+| `create_remoteconnect_project` | Create a paired `.PRJ/.STU`, synchronize all configured object variables/DDTs, write variables/ST, fully build, and publish only a clean result |
 | `export_remoteconnect_configuration` | Directly export the x70 DTM's native 25-sheet XLS from a temporary PRJ copy |
 | `apply_remoteconnect_configuration_copy` | Directly import XLS into a new PRJ, parse feedback, save/reopen, and withhold output on errors by default |
 | `open_remoteconnect_logic` | Open a bundle's paired UnitySoControl logic file using the configured OEM context |

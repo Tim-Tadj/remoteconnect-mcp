@@ -22,6 +22,72 @@ def _type_name(value: object) -> str:
     return str(value or "").partition(" <")[0].strip()
 
 
+def configuration_logic_variable_specs(workbook_path: str) -> list[dict]:
+    """Return exact name/DDT declarations required by an x70 configuration XLS."""
+    semantics = configuration_semantics(workbook_path)
+    specs = []
+    for identity in sorted(semantics["objects"], key=lambda item: str(item[0]).lower()):
+        logic_type = _type_name(identity[2])
+        if logic_type and logic_type.lower() != "none":
+            specs.append({"name": str(identity[0]), "type": logic_type})
+    return specs
+
+
+def merge_configuration_logic_variables(
+    configuration_specs: list[dict],
+    requested_specs: list[dict] | None,
+) -> tuple[list[dict], dict]:
+    """Merge configuration-owned declarations with explicit user variables."""
+    merged: list[dict] = []
+    by_name: dict[str, dict] = {}
+    for index, spec in enumerate(requested_specs or []):
+        name = str(spec.get("name", "")).strip()
+        type_name = str(spec.get("type", "")).strip()
+        if not name or not type_name:
+            raise ValueError(f"variables[{index}] requires non-empty name and type")
+        key = name.lower()
+        if key in by_name:
+            raise ValueError(f"Duplicate logic variable name: {name}")
+        copied = dict(spec)
+        copied.update({"name": name, "type": type_name})
+        by_name[key] = copied
+        merged.append(copied)
+
+    generated = []
+    matched = []
+    for required in configuration_specs:
+        name = str(required["name"])
+        type_name = str(required["type"])
+        existing = by_name.get(name.lower())
+        if existing is not None:
+            if existing["name"] != name:
+                raise ValueError(
+                    f"Configuration object {name!r} requires identical logic-variable casing; "
+                    f"received {existing['name']!r}"
+                )
+            if str(existing["type"]).lower() != type_name.lower():
+                raise ValueError(
+                    f"Configuration object {name!r} requires logic type {type_name!r}; "
+                    f"received {existing['type']!r}"
+                )
+            matched.append(name)
+            continue
+        spec = {
+            "name": name,
+            "type": type_name,
+            "comment": "Generated from RemoteConnect configuration object",
+        }
+        by_name[name.lower()] = spec
+        merged.append(spec)
+        generated.append(name)
+    return merged, {
+        "required_from_configuration": len(configuration_specs),
+        "explicit_matches": len(matched),
+        "generated_missing_variables": len(generated),
+        "generated_names": generated,
+    }
+
+
 def compare_configuration_logic(
     configured_objects: set[tuple],
     logic_variables: list[dict],

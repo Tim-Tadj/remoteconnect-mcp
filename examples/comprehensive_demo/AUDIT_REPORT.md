@@ -7,18 +7,20 @@ Audit target: `RemoteConnect_All_Objects_Demo.prj` and its paired STU.
 - Native x70 configuration export: 25 sheets
 - Configuration relationship graph: clean
 - Live-editor data-log identifier rules: clean
-- All 14 custom `DEMO_*` objects have an exact-name, exact-DDT STU variable
+- All 14 custom `DEMO_*` objects have exact-name, exact-DDT STU variables
 - All 14 custom objects are referenced by MAST section `ObjectRegisterDemo`
+- All 48 default SP575 physical-I/O objects and both logic-backed system objects have
+  exact-name, exact-DDT STU variables
+- Synchronization result: 64 expected, 64 matched, zero missing, zero mismatched
 - Isolated full logic rebuild: `built_ok`, zero errors and zero warnings
 - Source PRJ/STU files were not modified and no UI automation was used
 
-## Synchronization gap
+## Coverage warnings
 
-The PRJ contains 64 logic-backed objects, but the STU contains matching variables for only
-the 14 custom demo objects. The remaining 48 default SP575 physical-I/O objects—such as
-`PIO_SP575_AI1`, `PIO_SP575_DI1`, and `PIO_SP575_CI1`—plus two logic-backed system
-objects do not exist in the independently created STU.
+The audit reports 50 non-critical coverage warnings because the 48 default SP575 physical-I/O
+variables and two system variables are declared but not referenced by `ObjectRegisterDemo`.
+This is intentional: the demonstration logic exercises the 14 custom protocol/object examples
+without writing to every physical channel.
 
-This is a cross-project synchronization failure even though the current ST section builds.
-The next remediation phase should generate or synchronize those 50 managed variables with
-their exact PRJ DDTs, rebuild a copy, rerun this audit, and publish only when all 64 match.
+Overall audit status is `ok=true` with zero critical errors. Native relationships, editor rules,
+PRJ/STU synchronization, and the full logic build all pass.

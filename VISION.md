@@ -200,6 +200,15 @@ the simulator, and read/write live values — guided the whole way.
   objects that still need matching generated variables in the independently created STU.
   Configuration relationships and the logic build are clean.
 
+### Automatic configuration-to-logic synchronization (v0.18.0)
+
+- Complete project creation now derives every enabled logic-backed object from the accepted
+  native XLS and declares the same exact name/DDT in the STU. Explicit user declarations are
+  merged, while case or DDT conflicts fail before either project is published.
+- The regenerated comprehensive demo audits at 64/64 synchronized object variables with zero
+  critical errors, clean native relationships, and a zero-error/zero-warning full logic build.
+  Its 50 coverage warnings are intentionally unused default I/O/system variables, not sync errors.
+
 0. **Advanced SFC**: mine the spec's `linkSFC` directed-link pin-coordinate rules (in
    `_docspec/UDEXMLUnityProIECLanguages.txt`), then build-validate alternative + parallel
    branches, macro steps, multi-action qualifiers; upgrade the SFC reference/example.

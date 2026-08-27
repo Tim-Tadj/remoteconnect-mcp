@@ -43,6 +43,8 @@ and `VALUE_RAW`) so the configuration-to-logic link is explicit and build-checke
 - Final configuration export: 25 sheets, 14 demo objects, four Modbus scanner links,
   five DNP3 point links, and 14 data-log links
 - Independent STU reopen and full build: `built_ok`, zero errors, zero warnings
+- Cross-project audit: all 64 logic-backed PRJ objects have exact-name, exact-DDT STU
+  variables; 14 demo objects are referenced by ST and 50 default declarations are unused
 
 ## Regenerate
 

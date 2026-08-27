@@ -58,6 +58,8 @@ def register_prompts(mcp) -> None:
             "1. Ensure CE_MCP_XPDF_CONTEXT points to SCBForSCADAPack.xpdf.\n"
             "2. Call create_remoteconnect_project with a new .prj path, the installed platform "
             "(SCADAPack47x/57x/1070), variables, and ST source. Optionally pass a native XLS.\n"
+            "Configuration-backed object variables are generated in the STU automatically; "
+            "an explicit declaration with the same name must use its exact configured DDT.\n"
             "3. Accept the result only when ok=true, published=true, the DTM topology reopened "
             "with two DTMs, and build.build_state is built_ok. The matching .stu is published "
             "beside the .prj.\n"

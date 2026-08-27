@@ -18,7 +18,11 @@ from xml.etree import ElementTree
 from mcp.server.fastmcp import FastMCP
 
 from .bridge import CEError, ControlExpertBridge
-from .audit import audit_remoteconnect_bundle
+from .audit import (
+    audit_remoteconnect_bundle,
+    configuration_logic_variable_specs,
+    merge_configuration_logic_variables,
+)
 from .modbus import ModbusClient, ModbusError, parse_address
 from .prompts import register_prompts
 from . import schema as ce_schema
@@ -82,7 +86,7 @@ mcp = FastMCP(
 
 # FastMCP doesn't forward a version to the low-level server, so its serverInfo
 # would otherwise report the mcp SDK version; set the real package version.
-mcp._mcp_server.version = "0.17.0"
+mcp._mcp_server.version = "0.18.0"
 
 ce = ControlExpertBridge()
 mb = ModbusClient()
@@ -389,8 +393,10 @@ def create_remoteconnect_project(
     must have CE_MCP_XPDF_CONTEXT set to the installed SCADAPack xpdf file.
     Optional variables require name/type and may include comment, address, and
     initial_value. When st_source is supplied, it is written to task/section.
-    An optional native XLS can configure the new x70 DTM. Both outputs are
-    staged, fully rebuilt, saved, and published only after all checks pass.
+    An optional native XLS can configure the new x70 DTM. Every enabled,
+    logic-backed configuration object is automatically declared in the STU;
+    explicit variables with the same name must use the exact configured DDT.
+    Both outputs are staged, fully rebuilt, saved, and published only after all checks pass.
     No templates and no UI automation are used.
     """
     configuration_output = Path(project_path).expanduser().resolve()
@@ -411,6 +417,14 @@ def create_remoteconnect_project(
         raise ValueError(
             "CE_MCP_XPDF_CONTEXT must point to the installed SCADAPack .xpdf file "
             "before the MCP server starts"
+        )
+
+    requested_variables = list(variables or [])
+    logic_sync = None
+    if configuration_workbook:
+        requested_variables, logic_sync = merge_configuration_logic_variables(
+            configuration_logic_variable_specs(configuration_workbook),
+            requested_variables,
         )
 
     created_variables: list[dict] = []
@@ -443,7 +457,7 @@ def create_remoteconnect_project(
             logic = ce.new_logic_editor_project(
                 platform, xpdf_context, settings_xso or None
             )
-            for index, spec in enumerate(variables or []):
+            for index, spec in enumerate(requested_variables):
                 if not spec.get("name") or not spec.get("type"):
                     raise ValueError(f"variables[{index}] requires non-empty name and type")
                 created_variables.append(ce.create_variable(
@@ -479,6 +493,7 @@ def create_remoteconnect_project(
         "configuration_import": imported,
         "logic": logic,
         "variables": created_variables,
+        "configuration_logic_synchronization": logic_sync,
         "section": written,
         "build": build,
         "saved": saved,

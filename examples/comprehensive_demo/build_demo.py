@@ -66,23 +66,14 @@ def object_specs() -> list[dict]:
 
 
 def logic_variables() -> list[dict]:
-    types = {
-        "DEMO_MB_COIL": "T_SPx70_BOOL", "DEMO_MB_DISCRETE": "T_SPx70_BOOL",
-        "DEMO_MB_INPUT_DINT": "T_SPx70_DINT", "DEMO_MB_HOLD_REAL": "T_SPx70_REAL",
-        "DEMO_DNP_DI": "T_SPx70_BOOL", "DEMO_DNP_DO": "T_SPx70_BOOL",
-        "DEMO_DNP_AI": "T_SPx70_DINT", "DEMO_DNP_AO": "T_SPx70_REAL",
-        "DEMO_DNP_COUNTER": "T_SPx70_UDINT", "DEMO_ANALOG_INT": "T_SPx70_INT",
-        "DEMO_ANALOG_UINT": "T_SPx70_UINT", "DEMO_ADV_ANALOG": "T_SPx70_ADV_ANALOG",
-        "DEMO_ADV_DIGITAL": "T_SPx70_ADV_DIGITAL", "DEMO_ADV_COUNTER": "T_SPx70_ADV_COUNTER",
-    }
-    result = [{"name": name, "type": type_name, "comment": "RemoteConnect demo object"}
-              for name, type_name in types.items()]
-    result.extend([
+    # All configuration-owned T_SPx70_* declarations are generated automatically
+    # from objects.xls by create_remoteconnect_project. Only application helpers
+    # need to be supplied explicitly here.
+    return [
         {"name": "DemoHeartbeat", "type": "BOOL", "comment": "Demo logic heartbeat"},
         {"name": "DemoScaledValue", "type": "REAL", "comment": "Scaled Modbus value"},
         {"name": "DemoCounterMirror", "type": "UDINT", "comment": "Counter mirror"},
-    ])
-    return result
+    ]
 
 
 def build(overwrite: bool) -> dict:
