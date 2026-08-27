@@ -80,6 +80,19 @@ def _normalize(value):
     return value
 
 
+def _validate_data_log_name(name: str, label: str) -> None:
+    """Apply the live RemoteConnect editor's data-log identifier rules."""
+    if len(name) > 32:
+        raise BulkEditError(f"{label} must not exceed 32 characters")
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+        raise BulkEditError(
+            f"{label} must begin with a letter or underscore and contain only "
+            "letters, numbers, and underscores"
+        )
+    if "__" in name:
+        raise BulkEditError(f"{label} must not contain consecutive underscores")
+
+
 RELATIONSHIPS = (
     ("physical_io_object", "(3) Physical IO", "ObjSequenceId", "(2) Objects", "ObjSequenceId", True),
     ("physical_channel_module", "(4) Physical IO Channels", "ModuleId", "(3) Physical IO", "ModuleId", False),
@@ -664,6 +677,7 @@ def create_parent_entities_copy(
         name = str(spec.get("name", "")).strip()
         if not name or name in log_names:
             raise BulkEditError(f"data_logs[{index}] requires a new, non-empty name")
+        _validate_data_log_name(name, f"data_logs[{index}].name")
         prototype = spec.get("prototype_name")
         values = {"Location": "Internal <0>", **dict(spec.get("values") or {}), "LogName": name}
         add("(26) Data Logs", values, {"LogName": prototype} if prototype else None)

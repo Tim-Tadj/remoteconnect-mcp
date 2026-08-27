@@ -3,7 +3,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from remoteconnect_mcp.bulk_edit import compare_configuration_delta
+from remoteconnect_mcp.bulk_edit import (
+    BulkEditError,
+    _validate_data_log_name,
+    compare_configuration_delta,
+)
 from remoteconnect_mcp.remoteconnect import read_import_report
 
 
@@ -32,6 +36,19 @@ class ImportReportTests(unittest.TestCase):
             result = read_import_report(str(path))
         self.assertTrue(result["ok"])
         self.assertEqual(result["events"], [])
+
+
+class DataLogNameTests(unittest.TestCase):
+    def test_remoteconnect_identifier_is_accepted(self):
+        _validate_data_log_name("MCP_Demo_Log", "name")
+
+    def test_spaces_are_rejected_before_native_import(self):
+        with self.assertRaisesRegex(BulkEditError, "letters, numbers, and underscores"):
+            _validate_data_log_name("MCP Demo Log", "name")
+
+    def test_consecutive_underscores_are_rejected(self):
+        with self.assertRaisesRegex(BulkEditError, "consecutive underscores"):
+            _validate_data_log_name("MCP__Demo", "name")
 
 
 class ConfigurationDeltaTests(unittest.TestCase):

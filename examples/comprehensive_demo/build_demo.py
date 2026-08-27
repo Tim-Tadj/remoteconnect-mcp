@@ -22,7 +22,7 @@ XPDF = Path(
 def relationships(*extra: dict) -> list[dict]:
     return [
         {"kind": "browser", "list_name": "MCP Demo Objects"},
-        {"kind": "data_log", "log_name": "MCP Demo Log"},
+        {"kind": "data_log", "log_name": "MCP_Demo_Log"},
         *extra,
     ]
 
@@ -102,7 +102,7 @@ def build(overwrite: bool) -> dict:
         create_parent_entities_copy(
             str(seed_xls), str(parents_xls),
             browser_lists=[{"name": "MCP Demo Objects"}],
-            data_logs=[{"name": "MCP Demo Log"}],
+            data_logs=[{"name": "MCP_Demo_Log"}],
             modbus_devices=[{"name": "Demo_Modbus_PLC", "values": {"IpAddress": "192.168.10.50"}}],
             modbus_scanners=[
                 {"device_name": "Demo_Modbus_PLC", "register_start": 1, "register_quantity": 8, "values": {"ModbusDataType": "Discrete <1>", "ObjectType": "Digital <1>"}},

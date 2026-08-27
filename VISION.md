@@ -186,6 +186,9 @@ the simulator, and read/write live values — guided the whole way.
 - Strict semantics now preserve object data/logic types, protocol addresses, and scanner
   operation/data/object types. Multiple associations can be authored safely when the
   native scanner mapping table starts empty.
+- v0.16.2 applies the live editor's data-log identifier rules before workbook
+  generation; spaces, invalid characters, excessive length, and consecutive underscores
+  are rejected instead of surfacing later as configuration conflicts in RemoteConnect.
 
 0. **Advanced SFC**: mine the spec's `linkSFC` directed-link pin-coordinate rules (in
    `_docspec/UDEXMLUnityProIECLanguages.txt`), then build-validate alternative + parallel

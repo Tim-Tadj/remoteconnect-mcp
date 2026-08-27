@@ -29,7 +29,7 @@ Protocol and configuration coverage:
 - DNP3 device address `10` with digital input, digital output, analog input,
   analog output, and counter input points
 - Browser List `MCP Demo Objects`
-- Data log `MCP Demo Log`, with project logging enabled and all 14 objects linked
+- Data log `MCP_Demo_Log`, with project logging enabled and all 14 objects linked
 
 The paired logic declares the same object names and DDTs. MAST section
 `ObjectRegisterDemo` reads and writes their structure members (`VALUE`, `VALUE_ENG`,
