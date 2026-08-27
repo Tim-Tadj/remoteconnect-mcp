@@ -86,7 +86,7 @@ mcp = FastMCP(
 
 # FastMCP doesn't forward a version to the low-level server, so its serverInfo
 # would otherwise report the mcp SDK version; set the real package version.
-mcp._mcp_server.version = "0.18.0"
+mcp._mcp_server.version = "0.19.0"
 
 ce = ControlExpertBridge()
 mb = ModbusClient()

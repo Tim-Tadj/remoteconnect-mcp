@@ -356,9 +356,52 @@ class ControlExpertBridge:
             raise CEError(f"File not found: {path}")
         ext = os.path.splitext(path)[1].lower()
         self._do_close(False)
+        self._needs_saveas = False
         broker = self._broker()
-        if ext in (".stu", ".sta"):
-            self._app = self._open_native_application(broker, path)
+        archive_info = None
+        open_path = path
+        if ext == ".sta":
+            if not XPDF_CONTEXT_PATH:
+                raise CEError(
+                    "Opening a .STA archive requires CE_MCP_XPDF_CONTEXT to point to "
+                    "the installed SCADAPack XPDF context file."
+                )
+            from .logic_archive_bridge import (
+                LogicArchiveError,
+                prepare_sta,
+                record_materialized_stu,
+            )
+
+            try:
+                archive_info = prepare_sta(path, XPDF_CONTEXT_PATH, LIBSET_VERSION)
+            except LogicArchiveError as exc:
+                raise CEError(str(exc)) from exc
+            open_path = archive_info["materialized_stu"]
+            if archive_info["cached"]:
+                self._app = self._open_native_application(broker, open_path)
+            else:
+                # OpenApplication(.STA) activates the legacy in-process
+                # ASRootMC archive loader, which is unavailable to a 64-bit
+                # automation session on some RemoteConnect installations.
+                # OpenAPX is the UDE path for the exact APX/APD payload stored
+                # inside the archive and remains completely headless.
+                self._app = self._new_native_application(broker)
+                try:
+                    self._app.OpenAPX(archive_info.pop("apx"), archive_info.pop("apd"))
+                    os.makedirs(os.path.dirname(open_path), exist_ok=True)
+                    self._project(write=True).SaveAs(open_path)
+                    if not os.path.isfile(open_path):
+                        raise CEError("UDE SaveAs returned without creating the materialized .STU")
+                    record_materialized_stu(open_path)
+                except Exception:
+                    try:
+                        os.remove(open_path)
+                    except OSError:
+                        pass
+                    self._do_close(False)
+                    raise
+        elif ext == ".stu":
+            self._app = self._open_native_application(broker, open_path)
         elif ext in (".xef", ".zef"):
             self._app = self._new_native_application(broker)
             self._app.ImportProject(path)
@@ -367,9 +410,16 @@ class ControlExpertBridge:
                 f"Unsupported project file extension '{ext}'. "
                 "Use .stu/.sta (native) or .xef/.zef (XML exchange)."
             )
-        self._project_path = path if ext in (".stu", ".sta") else None
+        self._project_path = open_path if ext in (".stu", ".sta") else None
+        # An STA is an immutable archive input. Save subsequent edits to its
+        # materialized working STU, never to the archive or UDE's hidden temp
+        # backing path.
+        self._needs_saveas = ext == ".sta"
         proj = self._project(write=False)
-        return {"opened": path, "project": self._project_info(proj)}
+        result = {"opened": path, "project": self._project_info(proj)}
+        if archive_info:
+            result["archive_materialization"] = archive_info
+        return result
 
     def new_project(self, cpu_part_number: str, cpu_version: str) -> dict:
         return self._run(self._do_new_project, cpu_part_number, cpu_version)

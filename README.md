@@ -61,6 +61,10 @@ $env:CE_MCP_XPDF_CONTEXT = "C:\ProgramData\Schneider Electric\CommonControlExper
 
 Use `inspect_remoteconnect_project` with any member of the bundle to discover
 the paired files, then `open_remoteconnect_logic` to open the logic project.
+Native `.STU` files open directly. For archive-only bundles, `.STA` is loaded
+headlessly through UDE's `OpenAPX` API and materialized as a cached working
+`.STU`; this bypasses the legacy `ASRootMC` archive loader and does not require
+32-bit Python or UI automation. The source `.STA` is never modified.
 Use `create_remoteconnect_project` to create a complete pair, or
 `create_remoteconnect_configuration_project` for only the FDT configuration.
 These tools use the installed 32-bit FDT/DTM runtime directly; RemoteConnect is
