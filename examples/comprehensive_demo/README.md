@@ -7,6 +7,7 @@ This folder contains a headlessly generated, template-free SCADAPack 57x demo:
 - `RemoteConnect_All_Objects_Demo.xls` — native 25-sheet configuration export
 - `ObjectRegisterDemo.st` — readable source of the built MAST section
 - `build_demo.py` — reproducible programmatic generator
+- `AUDIT_REPORT.md` — PRJ/STU consistency findings from the v0.17 audit
 
 No UI automation is used. The PRJ was created from the installed CommDTM/x70 catalog,
 and the STU was created from the installed SCADAPack57x logic catalog.

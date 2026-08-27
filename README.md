@@ -111,6 +111,7 @@ claude mcp add control-expert -- C:\path\to\control-expert-mcp\.venv\Scripts\pyt
 | --- | --- |
 | `get_status` | Server version, open project, CPU, build state |
 | `inspect_remoteconnect_project` | Read-only discovery and summary of paired RemoteConnect `.PRJ/.RCZ/.STU/.STA` files |
+| `audit_remoteconnect_project` | Cross-check PRJ objects and relationships against STU variables, section references, live-editor rules, and an optional unsaved full rebuild |
 | `inventory_remoteconnect_configuration` | Read-only FDT/DTM topology and configuration-record inventory; never deserializes opaque vendor payloads |
 | `read_remoteconnect_feedback` | Parse Object Bulk Edit logs into per-object changes, warnings, errors, and an `ok` result |
 | `read_remoteconnect_import_report` | Parse direct x70 XLS-import diagnostics (including UTF-16 table/row errors) |

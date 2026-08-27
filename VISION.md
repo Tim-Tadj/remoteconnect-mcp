@@ -190,6 +190,15 @@ the simulator, and read/write live values — guided the whole way.
   generation; spaces, invalid characters, excessive length, and consecutive underscores
   are rejected instead of surfacing later as configuration conflicts in RemoteConnect.
 
+### Cross-project audit (v0.17.0)
+
+- A read-only audit now exports the PRJ configuration, validates native relationships and
+  known live-editor rules, matches every logic-backed object name/DDT to the paired STU,
+  locates program-section references, and performs an isolated unsaved full rebuild.
+- The first comprehensive-demo audit proved all 14 demo objects are synchronized and used,
+  while identifying 50 default SP575 objects that still need matching generated variables
+  in the independently created STU. Configuration relationships and the logic build are clean.
+
 0. **Advanced SFC**: mine the spec's `linkSFC` directed-link pin-coordinate rules (in
    `_docspec/UDEXMLUnityProIECLanguages.txt`), then build-validate alternative + parallel
    branches, macro steps, multi-action qualifiers; upgrade the SFC reference/example.

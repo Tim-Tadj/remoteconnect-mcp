@@ -17,7 +17,8 @@ from xml.etree import ElementTree
 
 from mcp.server.fastmcp import FastMCP
 
-from .bridge import ControlExpertBridge
+from .bridge import CEError, ControlExpertBridge
+from .audit import audit_remoteconnect_bundle
 from .modbus import ModbusClient, ModbusError, parse_address
 from .prompts import register_prompts
 from . import schema as ce_schema
@@ -81,7 +82,7 @@ mcp = FastMCP(
 
 # FastMCP doesn't forward a version to the low-level server, so its serverInfo
 # would otherwise report the mcp SDK version; set the real package version.
-mcp._mcp_server.version = "0.16.2"
+mcp._mcp_server.version = "0.17.0"
 
 ce = ControlExpertBridge()
 mb = ModbusClient()
@@ -156,6 +157,29 @@ def inspect_remoteconnect_project(path: str) -> dict:
     try:
         return inspect_project(path)
     except (FileNotFoundError, ValueError, ElementTree.ParseError) as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool()
+def audit_remoteconnect_project(path: str, rebuild_logic: bool = True) -> dict:
+    """Audit consistency between a paired RemoteConnect PRJ and STU/STA.
+
+    Headlessly exports the native x70 configuration, validates table relationships
+    and known live-editor naming rules, compares every logic-backed object name/DDT with
+    the paired logic variables, locates section references, and optionally performs
+    a full unsaved rebuild. An isolated logic-editor session is used, both source
+    files remain unchanged, and no UI automation is involved.
+    """
+    try:
+        return audit_remoteconnect_bundle(path, rebuild_logic=rebuild_logic)
+    except (
+        CEError,
+        NativeBridgeError,
+        BulkEditError,
+        OSError,
+        ValueError,
+        subprocess.SubprocessError,
+    ) as exc:
         raise ValueError(str(exc)) from exc
 
 
