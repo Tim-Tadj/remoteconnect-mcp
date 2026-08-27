@@ -31,6 +31,7 @@ from .remoteconnect import (
 from .bulk_edit import (
     BulkEditError,
     create_objects_copy,
+    create_parent_entities_copy,
     create_workbook_copy,
     inspect_relationships,
     inspect_workbook,
@@ -80,7 +81,7 @@ mcp = FastMCP(
 
 # FastMCP doesn't forward a version to the low-level server, so its serverInfo
 # would otherwise report the mcp SDK version; set the real package version.
-mcp._mcp_server.version = "0.15.0"
+mcp._mcp_server.version = "0.16.0"
 
 ce = ControlExpertBridge()
 mb = ModbusClient()
@@ -227,6 +228,7 @@ def create_remoteconnect_bulk_edit_copy(
     output_path: str,
     patches: list[dict] | None = None,
     additions: list[dict] | None = None,
+    project_settings: dict[str, str | int | float | bool] | None = None,
     overwrite: bool = False,
 ) -> dict:
     """Create a patched copy of a RemoteConnect Object Bulk Edit workbook.
@@ -237,7 +239,11 @@ def create_remoteconnect_bulk_edit_copy(
     is never modified. additions can create an object safely by cloning exactly
     one complete existing row and overriding fields: {sheet, clone:{...},
     values:{Name:'NewObject', SequenceId:123}}. Hidden/required fields are
-    retained from the source row. The direct DTM import remains the semantic gate.
+    retained from the source row. For a table with no prototype rows, pass
+    {sheet, blank:true, values:{...}} to write a fully specified row. The
+    project_settings mapping updates stable keys from the Project Settings
+    sheet, for example {RtuProjectSettingsDataLoggingSelected:'Enabled <1>'}.
+    The direct DTM import remains the semantic gate.
     """
     try:
         return create_workbook_copy(
@@ -245,6 +251,7 @@ def create_remoteconnect_bulk_edit_copy(
             output_path,
             patches,
             additions=additions,
+            project_settings=project_settings,
             overwrite=overwrite,
         )
     except (BulkEditError, OSError) as exc:
@@ -271,6 +278,49 @@ def create_remoteconnect_objects_copy(
     try:
         return create_objects_copy(
             template_path, output_path, objects, overwrite=overwrite
+        )
+    except (BulkEditError, OSError) as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool()
+def create_remoteconnect_parent_entities_copy(
+    template_path: str,
+    output_path: str,
+    browser_lists: list[dict] | None = None,
+    data_logs: list[dict] | None = None,
+    modbus_devices: list[dict] | None = None,
+    modbus_scanners: list[dict] | None = None,
+    dnp_devices: list[dict] | None = None,
+    dnp_points: list[dict] | None = None,
+    overwrite: bool = False,
+) -> dict:
+    """Create configuration parents before linking RemoteConnect objects.
+
+    Supports Browser Lists, data logs, Modbus devices/scanners, and DNP3
+    controlling-station devices/points. IDs and name references are allocated
+    automatically. A compatible native row is cloned when available; an empty
+    table receives a fully specified blank row. Use values for controller- and
+    protocol-specific fields. Modbus devices use {name, prototype_name?, values};
+    scanners use {device_name, register_start, register_quantity,
+    prototype_scanner_sequence_id?, values?}. DNP3 devices use {name,
+    prototype_name?, values:{DeviceAddress,...}}; points use {device_name,
+    remote_point_number, point_type}, where point_type is digital_input,
+    digital_output, analog_input, analog_output, or counter_input. Then apply
+    the result through the strict native import/re-export gate. The template is
+    never modified.
+    """
+    try:
+        return create_parent_entities_copy(
+            template_path,
+            output_path,
+            browser_lists=browser_lists,
+            data_logs=data_logs,
+            modbus_devices=modbus_devices,
+            modbus_scanners=modbus_scanners,
+            dnp_devices=dnp_devices,
+            dnp_points=dnp_points,
+            overwrite=overwrite,
         )
     except (BulkEditError, OSError) as exc:
         raise ValueError(str(exc)) from exc

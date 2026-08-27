@@ -164,8 +164,21 @@ the simulator, and read/write live values — guided the whole way.
   stale Browser rows and workbooks from a different project state can be rejected. Clients
   must author from an export of the exact source PRJ and heed relationship diagnostics.
 
-0. **Run the final big test** (above) and **commit the uncommitted batch**.
-1. **Advanced SFC**: mine the spec's `linkSFC` directed-link pin-coordinate rules (in
+### Typed configuration parents (v0.16.0)
+
+- Parent creation now allocates and writes Browser Lists, data logs, Modbus devices and
+  scanners, and DNP3 controlling-station devices and points. Empty native sheets are
+  supported through fully specified blank rows; populated sheets retain row cloning.
+- Installed-DTM round trips proved blank-table Modbus device/scanner creation, scanner
+  object mapping, blank-table DNP3 device/point creation, DNP3 point object mapping, and
+  one-pass composition with Browser and data-log relationships.
+- Project Settings can be changed by stable machine key. Creating or linking a data log
+  automatically enables `RtuProjectSettingsDataLoggingSelected`; strict re-export checks
+  both the global switch and the object-to-log relationship so silent DTM omission fails.
+- RemoteConnect-generated placeholder association rows are detected and filled rather
+  than treated as duplicate scanner/DNP3 addresses.
+
+0. **Advanced SFC**: mine the spec's `linkSFC` directed-link pin-coordinate rules (in
    `_docspec/UDEXMLUnityProIECLanguages.txt`), then build-validate alternative + parallel
    branches, macro steps, multi-action qualifiers; upgrade the SFC reference/example.
 2. **Per-language element-catalog resource** (`@mcp.resource`) + a `read_reference` tool

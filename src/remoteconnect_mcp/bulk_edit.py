@@ -308,12 +308,18 @@ def create_objects_copy(
     browser_lists = _rows_by_prefix(book, "(21) Browser Lists")
     browser_rows = _rows_by_prefix(book, "(22) Browser Objects")
     modbus_devices = _rows_by_prefix(book, "(9) Modbus Server Devices")
+    modbus_status_rows = _rows_by_prefix(book, "(13) Modbus Server Device - Obj")
     scanner_rows = _rows_by_prefix(book, "(10) Modbus Scanners")
     scanner_mapping_rows = _rows_by_prefix(book, "(14) Modbus Scanner - Obj")
+    dnp_devices = _rows_by_prefix(book, "(5) DNP3 Controlling Station De")
+    dnp_points = _rows_by_prefix(book, "(6) DNP3 Controlling Station Po")
+    dnp_status_rows = _rows_by_prefix(book, "(11) DNP3 Controlling Station D")
+    dnp_mapping_rows = _rows_by_prefix(book, "(12) DNP3 Controlling Station P")
     data_logs = _rows_by_prefix(book, "(26) Data Logs")
 
     patches: list[dict] = []
     additions: list[dict] = []
+    project_settings: dict[str, str] = {}
     created = []
 
     # RemoteConnect 3.0 exports can leave Browser ObjSequenceId blank even
@@ -410,14 +416,17 @@ def create_objects_copy(
                 status = link.get("status_control_type")
                 if not status:
                     raise BulkEditError(f"{label} requires status_control_type")
-                patches.append({
-                    "sheet": _sheet_with_prefix(book, "(13) Modbus Server Device - Obj").name,
-                    "match": {
-                        "DeviceSequenceId": device["DeviceSequenceId"],
-                        "StatusControlType": status,
-                    },
-                    "values": {"ObjSequenceId": sequence_id, **values},
-                })
+                status_match = {"DeviceSequenceId": device["DeviceSequenceId"],
+                                "StatusControlType": status}
+                status_values = {**status_match, "ObjSequenceId": sequence_id, **values}
+                if any(all(row.get(k) == _normalize(v) for k, v in status_match.items())
+                       for row in modbus_status_rows):
+                    patches.append({"sheet": _sheet_with_prefix(book, "(13) Modbus Server Device - Obj").name,
+                                    "match": status_match, "values": {"ObjSequenceId": sequence_id, **values}})
+                else:
+                    additions.append({"sheet": _sheet_with_prefix(book, "(13) Modbus Server Device - Obj").name,
+                                      "blank": True, "values": status_values})
+                    modbus_status_rows.append(dict(status_values))
             elif kind == "modbus_scanner_point":
                 scanner_id = _normalize(link.get("scanner_sequence_id"))
                 scanner = unique(scanner_rows, {"ScannerSequenceId": scanner_id}, label + ".scanner")
@@ -425,12 +434,12 @@ def create_objects_copy(
                 if address is None:
                     raise BulkEditError(f"{label} requires register_address")
                 bit_position = link.get("bit_position", 0)
-                if any(
+                existing_mappings = [row for row in scanner_mapping_rows if (
                     row.get("PointScannerSequenceId") == scanner["ScannerSequenceId"]
                     and row.get("ModbusRegisterAddress") == _normalize(address)
                     and row.get("ModbusRegisterAddressBitPosition") == _normalize(bit_position)
-                    for row in scanner_mapping_rows
-                ):
+                )]
+                if any(row.get("ObjSequenceId", "") != "" for row in existing_mappings):
                     raise BulkEditError(
                         f"{label} duplicates scanner {scanner_id} address {address} bit {bit_position}"
                     )
@@ -453,29 +462,48 @@ def create_objects_copy(
                     "ModbusRegisterAddressBitPosition": bit_position,
                     "ObjSequenceId": sequence_id,
                 })
+                if existing_mappings:
+                    patches.append({
+                        "sheet": _sheet_with_prefix(book, "(14) Modbus Scanner - Obj").name,
+                        "match": {
+                            "PointScannerSequenceId": scanner["ScannerSequenceId"],
+                            "ModbusRegisterAddress": address,
+                            "ModbusRegisterAddressBitPosition": bit_position,
+                        },
+                        "values": {"ObjSequenceId": sequence_id, **values},
+                    })
+                    existing_mappings[0].update(values)
+                    linked.append(kind)
+                    continue
                 clone = link.get("clone")
+                blank_mapping = False
                 if not clone:
                     candidates = [
                         row for row in scanner_mapping_rows
                         if row.get("PointScannerSequenceId") == scanner["ScannerSequenceId"]
                     ] or scanner_mapping_rows[:1]
-                    if not candidates:
-                        raise BulkEditError(f"{label} has no scanner-object mapping row to clone")
-                    prototype_mapping = candidates[0]
-                    clone = {
-                        key: prototype_mapping[key]
-                        for key in (
-                            "PointScannerSequenceId",
-                            "ModbusRegisterAddress",
-                            "ModbusRegisterAddressBitPosition",
-                            "ObjSequenceId",
-                        )
-                    }
-                additions.append({
+                    if candidates:
+                        prototype_mapping = candidates[0]
+                        clone = {
+                            key: prototype_mapping[key]
+                            for key in (
+                                "PointScannerSequenceId",
+                                "ModbusRegisterAddress",
+                                "ModbusRegisterAddressBitPosition",
+                                "ObjSequenceId",
+                            )
+                        }
+                    else:
+                        blank_mapping = True
+                mapping_addition = {
                     "sheet": _sheet_with_prefix(book, "(14) Modbus Scanner - Obj").name,
-                    "clone": clone,
                     "values": values,
-                })
+                }
+                if blank_mapping:
+                    mapping_addition["blank"] = True
+                else:
+                    mapping_addition["clone"] = clone
+                additions.append(mapping_addition)
                 scanner_mapping_rows.append(dict(values))
             elif kind == "physical_io_channel":
                 patches.append({
@@ -484,20 +512,31 @@ def create_objects_copy(
                     "values": {"ObjSequenceId": sequence_id, **values},
                 })
             elif kind == "dnp_device_status":
-                patches.append({
-                    "sheet": _sheet_with_prefix(book, "(11) DNP3 Controlling Station D").name,
-                    "match": {
-                        "DeviceSequenceId": link.get("device_sequence_id"),
-                        "StatusControlType": link.get("status_control_type"),
-                    },
-                    "values": {"ObjSequenceId": sequence_id, **values},
-                })
+                device = unique(dnp_devices, {"DeviceSequenceId": link.get("device_sequence_id")}, label + ".device")
+                status = link.get("status_control_type")
+                if not status:
+                    raise BulkEditError(f"{label} requires status_control_type")
+                status_match = {"DeviceSequenceId": device["DeviceSequenceId"], "StatusControlType": status}
+                if any(all(row.get(k) == _normalize(v) for k, v in status_match.items()) for row in dnp_status_rows):
+                    patches.append({"sheet": _sheet_with_prefix(book, "(11) DNP3 Controlling Station D").name,
+                                    "match": status_match, "values": {"ObjSequenceId": sequence_id, **values}})
+                else:
+                    status_values = {**status_match, "ObjSequenceId": sequence_id, **values}
+                    additions.append({"sheet": _sheet_with_prefix(book, "(11) DNP3 Controlling Station D").name,
+                                      "blank": True, "values": status_values})
+                    dnp_status_rows.append(dict(status_values))
             elif kind == "dnp_point":
-                patches.append({
-                    "sheet": _sheet_with_prefix(book, "(12) DNP3 Controlling Station P").name,
-                    "match": {"PointSequenceId": link.get("point_sequence_id")},
-                    "values": {"ObjSequenceId": sequence_id, **values},
-                })
+                point = unique(dnp_points, {"RemotePointSequenceId": link.get("point_sequence_id")}, label + ".point")
+                point_match = {"PointSequenceId": point["RemotePointSequenceId"]}
+                if any(row.get("PointSequenceId") == point["RemotePointSequenceId"] for row in dnp_mapping_rows):
+                    patches.append({"sheet": _sheet_with_prefix(book, "(12) DNP3 Controlling Station P").name,
+                                    "match": point_match, "values": {"ObjSequenceId": sequence_id, **values}})
+                else:
+                    mapping_values = {**point_match, "RemotePointNumber": point["RemotePointNumber"],
+                                      "ObjSequenceId": sequence_id, **values}
+                    additions.append({"sheet": _sheet_with_prefix(book, "(12) DNP3 Controlling Station P").name,
+                                      "blank": True, "values": mapping_values})
+                    dnp_mapping_rows.append(dict(mapping_values))
             elif kind == "data_log":
                 log_name = str(link.get("log_name", "")).strip()
                 if not log_name:
@@ -508,6 +547,7 @@ def create_objects_copy(
                     "DataLoggingLogFileName": log_name,
                     **values,
                 })
+                project_settings["RtuProjectSettingsDataLoggingSelected"] = "Enabled <1>"
             else:
                 raise BulkEditError(f"Unsupported relationship kind in {label}: {kind!r}")
             linked.append(kind)
@@ -523,6 +563,7 @@ def create_objects_copy(
         output_path,
         patches,
         additions=additions,
+        project_settings=project_settings,
         overwrite=overwrite,
     )
     relationship_validation = inspect_relationships(output_path)
@@ -533,6 +574,241 @@ def create_objects_copy(
         "ok": relationship_validation["ok"],
         "next_step": "Apply with apply_remoteconnect_configuration_copy; the DTM remains the semantic authority.",
     }
+
+
+def create_parent_entities_copy(
+    template_path: str,
+    output_path: str,
+    *,
+    browser_lists: list[dict] | None = None,
+    data_logs: list[dict] | None = None,
+    modbus_devices: list[dict] | None = None,
+    modbus_scanners: list[dict] | None = None,
+    dnp_devices: list[dict] | None = None,
+    dnp_points: list[dict] | None = None,
+    overwrite: bool = False,
+) -> dict:
+    """Create typed parent rows before objects are attached to them."""
+    groups = (browser_lists, data_logs, modbus_devices, modbus_scanners, dnp_devices, dnp_points)
+    if not any(groups):
+        raise BulkEditError("At least one parent-entity specification is required")
+    _, book = _open(template_path)
+    browser_rows = _rows_by_prefix(book, "(21) Browser Lists")
+    log_rows = _rows_by_prefix(book, "(26) Data Logs")
+    modbus_rows = _rows_by_prefix(book, "(9) Modbus Server Devices")
+    scanner_rows = _rows_by_prefix(book, "(10) Modbus Scanners")
+    server_status_rows = _rows_by_prefix(book, "(13) Modbus Server Device - Obj")
+    dnp_device_rows = _rows_by_prefix(book, "(5) DNP3 Controlling Station De")
+    dnp_point_rows = _rows_by_prefix(book, "(6) DNP3 Controlling Station Po")
+    dnp_status_rows = _rows_by_prefix(book, "(11) DNP3 Controlling Station D")
+    original_rows = {
+        "(21) Browser Lists": list(browser_rows),
+        "(26) Data Logs": list(log_rows),
+        "(9) Modbus Server Devices": list(modbus_rows),
+        "(10) Modbus Scanners": list(scanner_rows),
+        "(5) DNP3 Controlling Station De": list(dnp_device_rows),
+        "(6) DNP3 Controlling Station Po": list(dnp_point_rows),
+    }
+    clone_keys = {
+        "(21) Browser Lists": "Name", "(26) Data Logs": "LogName",
+        "(9) Modbus Server Devices": "DeviceName",
+        "(10) Modbus Scanners": "ScannerSequenceId",
+        "(5) DNP3 Controlling Station De": "DeviceName",
+        "(6) DNP3 Controlling Station Po": "RemotePointSequenceId",
+    }
+    additions: list[dict] = []
+    created: dict[str, list[dict]] = {
+        "browser_lists": [], "data_logs": [], "modbus_devices": [],
+        "modbus_scanners": [], "dnp_devices": [], "dnp_points": [],
+    }
+
+    def next_number(rows, field, default=0):
+        values = [int(row[field]) for row in rows if isinstance(row.get(field), (int, float))]
+        return max(values, default=default - 1) + 1
+
+    def select(rows, match, label):
+        matches = [row for row in rows if all(row.get(k) == _normalize(v) for k, v in match.items())]
+        if len(matches) != 1:
+            raise BulkEditError(f"{label} selected {len(matches)} rows; exactly one is required: {match}")
+        return matches[0]
+
+    def add(prefix, values, prototype_match=None):
+        item = {"sheet": _sheet_with_prefix(book, prefix).name, "values": values}
+        if prototype_match:
+            select(original_rows[prefix], prototype_match, prefix + ".prototype")
+            item["clone"] = prototype_match
+        elif original_rows[prefix]:
+            prototype = original_rows[prefix][0]
+            item["clone"] = {clone_keys[prefix]: prototype[clone_keys[prefix]]}
+        else:
+            item["blank"] = True
+        additions.append(item)
+
+    browser_names = {row.get("Name") for row in browser_rows}
+    next_browser_id = next_number(browser_rows, "BrowserReferenceId")
+    for index, spec in enumerate(browser_lists or []):
+        name = str(spec.get("name", "")).strip()
+        if not name or name in browser_names:
+            raise BulkEditError(f"browser_lists[{index}] requires a new, non-empty name")
+        prototype = spec.get("prototype_name")
+        values = {**dict(spec.get("values") or {}), "Name": name, "BrowserReferenceId": next_browser_id}
+        add("(21) Browser Lists", values, {"Name": prototype} if prototype else None)
+        browser_rows.append(dict(values)); browser_names.add(name)
+        created["browser_lists"].append({"name": name, "browser_reference_id": next_browser_id})
+        next_browser_id += 1
+
+    log_names = {row.get("LogName") for row in log_rows}
+    for index, spec in enumerate(data_logs or []):
+        name = str(spec.get("name", "")).strip()
+        if not name or name in log_names:
+            raise BulkEditError(f"data_logs[{index}] requires a new, non-empty name")
+        prototype = spec.get("prototype_name")
+        values = {"Location": "Internal <0>", **dict(spec.get("values") or {}), "LogName": name}
+        add("(26) Data Logs", values, {"LogName": prototype} if prototype else None)
+        log_rows.append(dict(values)); log_names.add(name)
+        created["data_logs"].append({"name": name})
+
+    modbus_names = {row.get("DeviceName") for row in modbus_rows}
+    next_modbus_id = next_number(modbus_rows, "DeviceSequenceId", 1)
+    for index, spec in enumerate(modbus_devices or []):
+        name = str(spec.get("name", "")).strip()
+        if not name or name in modbus_names:
+            raise BulkEditError(f"modbus_devices[{index}] requires a new, non-empty name")
+        prototype = spec.get("prototype_name")
+        defaults = {
+            "DeviceType": "Modbus/TCP <5>", "UnitIdentifier": 1,
+            "SerialPort": "Serial 1 <1>", "IpAddress": "0.0.0.0",
+            "DeviceListenPort": 502, "RegisterAddressing": "5 Digits <0>",
+            "DefaultScanRate": 500, "RequestTimeoutTolerance": 3, "Timeout": 1000,
+            "WriteCoils": "Multiple (FC 15) <0>",
+            "WriteHoldingRegisters": "Multiple (FC 16) <0>",
+            "ModbusByteOrder": "High byte/Low word first (3412) <0>",
+            "ModbusBitOrder": "Most significant bit first <0>",
+            "HealthScanRate": 15000, "RedundancyMonitoring": "Disabled <0>",
+        }
+        values = {**defaults, **dict(spec.get("values") or {}),
+                  "DeviceSequenceId": next_modbus_id, "DeviceName": name}
+        add("(9) Modbus Server Devices", values,
+            {"DeviceName": prototype} if prototype else None)
+        if prototype:
+            prototype_row = select(modbus_rows, {"DeviceName": prototype}, f"modbus_devices[{index}].prototype")
+            statuses = [row for row in server_status_rows if row.get("DeviceSequenceId") == prototype_row["DeviceSequenceId"]]
+            for status in statuses:
+                additions.append({
+                    "sheet": _sheet_with_prefix(book, "(13) Modbus Server Device - Obj").name,
+                    "clone": {"DeviceSequenceId": status["DeviceSequenceId"], "StatusControlType": status["StatusControlType"]},
+                    "values": {"DeviceSequenceId": next_modbus_id, "ObjSequenceId": ""},
+                })
+        modbus_rows.append(dict(values)); modbus_names.add(name)
+        created["modbus_devices"].append({"name": name, "device_sequence_id": next_modbus_id})
+        next_modbus_id += 1
+
+    next_scanner_id = next_number(scanner_rows, "ScannerSequenceId", 1)
+    for index, spec in enumerate(modbus_scanners or []):
+        device_name = str(spec.get("device_name", "")).strip()
+        device = select(modbus_rows, {"DeviceName": device_name}, f"modbus_scanners[{index}].device")
+        prototype_id = spec.get("prototype_scanner_sequence_id")
+        if spec.get("register_start") is None or spec.get("register_quantity") is None:
+            raise BulkEditError(f"modbus_scanners[{index}] requires register_start and register_quantity")
+        defaults = {
+            "Operation": "Read <0>", "WriteOutputs": "On change <2>",
+            "OpOfflineDevices": "Send read requests <0>",
+            "UnsuccessfulWrite": "Revert point values <0>",
+            "ModbusDataType": "UINT (Analog) <5000>",
+            "ObjectType": "Analog <0>", "ScanRate": 0, "Timeout": 0,
+            "PhysicalOutputs": "Disabled <0>",
+        }
+        values = {**defaults, **dict(spec.get("values") or {}),
+                  "DeviceSequenceId": device["DeviceSequenceId"], "DeviceName": device_name,
+                  "RegisterStartAddr": spec["register_start"],
+                  "RegisterQuantity": spec["register_quantity"],
+                  "ScannerSequenceId": next_scanner_id}
+        add("(10) Modbus Scanners", values,
+            {"ScannerSequenceId": prototype_id} if prototype_id is not None else None)
+        scanner_rows.append(dict(values))
+        created["modbus_scanners"].append({"scanner_sequence_id": next_scanner_id, "device_name": device_name})
+        next_scanner_id += 1
+
+    dnp_names = {row.get("DeviceName") for row in dnp_device_rows}
+    next_dnp_id = next_number(dnp_device_rows, "DeviceSequenceId", 1)
+    for index, spec in enumerate(dnp_devices or []):
+        name = str(spec.get("name", "")).strip()
+        if not name or name in dnp_names:
+            raise BulkEditError(f"dnp_devices[{index}] requires a new, non-empty name")
+        prototype = spec.get("prototype_name")
+        defaults = {
+            "DeviceType": "DNP3 Device <1>", "SerialPort": "Serial 2 <2>",
+            "PollingType": "Background Poll <1>", "PollRate1": 0, "PollRate2": 0,
+            "PollRate3": 0, "PollRate4": 0, "PollLimit": 2, "AppTimeout": 60,
+            "HealthPollRate": 120, "HealthPollType": "Delay Measurement <1>",
+            "MultiFragmentRespose": "Yes <1>", "SetTime": "No <0>",
+        }
+        values = {**defaults, **dict(spec.get("values") or {}),
+                  "DeviceSequenceId": next_dnp_id, "DeviceName": name}
+        if "DeviceAddress" not in values:
+            raise BulkEditError(f"dnp_devices[{index}].values requires DeviceAddress")
+        add("(5) DNP3 Controlling Station De", values,
+            {"DeviceName": prototype} if prototype else None)
+        if prototype:
+            prototype_row = select(dnp_device_rows, {"DeviceName": prototype}, f"dnp_devices[{index}].prototype")
+            statuses = [row for row in dnp_status_rows if row.get("DeviceSequenceId") == prototype_row["DeviceSequenceId"]]
+            for status in statuses:
+                additions.append({
+                    "sheet": _sheet_with_prefix(book, "(11) DNP3 Controlling Station D").name,
+                    "clone": {"DeviceSequenceId": status["DeviceSequenceId"], "StatusControlType": status["StatusControlType"]},
+                    "values": {"DeviceSequenceId": next_dnp_id, "ObjSequenceId": ""},
+                })
+        dnp_device_rows.append(dict(values)); dnp_names.add(name)
+        created["dnp_devices"].append({"name": name, "device_sequence_id": next_dnp_id})
+        next_dnp_id += 1
+
+    next_point_id = next_number(dnp_point_rows, "RemotePointSequenceId", 1)
+    for index, spec in enumerate(dnp_points or []):
+        device_name = str(spec.get("device_name", "")).strip()
+        device = select(dnp_device_rows, {"DeviceName": device_name}, f"dnp_points[{index}].device")
+        if spec.get("remote_point_number") is None:
+            raise BulkEditError(f"dnp_points[{index}] requires remote_point_number")
+        prototype_id = spec.get("prototype_point_sequence_id")
+        point_types = {
+            "digital_input": "Digital Input <1>", "digital_output": "Digital Output <2>",
+            "analog_input": "Analog Input <3>", "analog_output": "Analog Output <4>",
+            "counter_input": "Counter Input <5>",
+        }
+        point_values = dict(spec.get("values") or {})
+        if spec.get("point_type") is not None:
+            point_key = str(spec["point_type"]).strip().lower().replace(" ", "_")
+            if point_key not in point_types:
+                raise BulkEditError(
+                    f"dnp_points[{index}].point_type must be one of {sorted(point_types)}"
+                )
+            point_values["RemotePointType"] = point_types[point_key]
+        values = {"LocalPointQuantity": 1, **point_values,
+                  "RemoteDeviceId": device["DeviceSequenceId"], "RemoteDeviceName": device_name,
+                  "RemotePointNumber": spec["remote_point_number"],
+                  "RemotePointSequenceId": next_point_id}
+        if "RemotePointType" not in values:
+            raise BulkEditError(f"dnp_points[{index}] requires point_type or values.RemotePointType")
+        add("(6) DNP3 Controlling Station Po", values,
+            {"RemotePointSequenceId": prototype_id} if prototype_id is not None else None)
+        dnp_point_rows.append(dict(values))
+        created["dnp_points"].append({"remote_point_sequence_id": next_point_id, "device_name": device_name,
+                                      "remote_point_number": spec["remote_point_number"]})
+        next_point_id += 1
+
+    written = create_workbook_copy(
+        template_path,
+        output_path,
+        additions=additions,
+        project_settings=(
+            {"RtuProjectSettingsDataLoggingSelected": "Enabled <1>"}
+            if data_logs
+            else None
+        ),
+        overwrite=overwrite,
+    )
+    validation = inspect_relationships(output_path)
+    return {**written, "created": created, "relationship_validation": validation,
+            "ok": validation["ok"]}
 
 
 def configuration_semantics(path: str) -> dict[str, set[tuple]]:
@@ -560,11 +836,25 @@ def configuration_semantics(path: str) -> dict[str, set[tuple]]:
     scanners = {row.get("ScannerSequenceId"): row for row in rows["(10) Modbus Scanners"]}
     dnp_devices = {row.get("DeviceSequenceId"): row.get("DeviceName") for row in rows["(5) DNP3 Controlling Station De"]}
     dnp_points = {row.get("RemotePointSequenceId"): row for row in rows["(6) DNP3 Controlling Station Po"]}
+    project_settings_sheet = _sheet_with_prefix(book, "(1) Project Settings")
+    project_settings = {
+        (_normalize(project_settings_sheet.cell_value(row, 0)),
+         _normalize(project_settings_sheet.cell_value(row, 2)))
+        for row in range(1, project_settings_sheet.nrows)
+        if project_settings_sheet.cell_value(row, 0) != ""
+    }
     return {
+        "project_settings": project_settings,
         "objects": enabled_objects,
+        "browser_lists": {(row.get("Name"),) for row in rows["(21) Browser Lists"]},
         "browser_links": {
             (row.get("ObjectName"), browser_lists.get(row.get("BrowserReferenceId")))
             for row in rows["(22) Browser Objects"]
+        },
+        "modbus_devices": {
+            (row.get("DeviceName"), row.get("DeviceType"), row.get("UnitIdentifier"),
+             row.get("SerialPort"), row.get("IpAddress"), row.get("DeviceListenPort"))
+            for row in rows["(9) Modbus Server Devices"]
         },
         "modbus_scanners": {
             (modbus_devices.get(row.get("DeviceSequenceId")), row.get("RegisterStartAddr"), row.get("RegisterQuantity"))
@@ -595,6 +885,15 @@ def configuration_semantics(path: str) -> dict[str, set[tuple]]:
             for row in rows["(11) DNP3 Controlling Station D"]
             if row.get("ObjSequenceId", "") != ""
         },
+        "dnp_devices": {
+            (row.get("DeviceName"), row.get("DeviceType"), row.get("DeviceAddress"))
+            for row in rows["(5) DNP3 Controlling Station De"]
+        },
+        "dnp_points": {
+            (dnp_devices.get(row.get("RemoteDeviceId")), row.get("RemotePointType"),
+             row.get("RemotePointNumber"), row.get("LocalPointQuantity"))
+            for row in rows["(6) DNP3 Controlling Station Po"]
+        },
         "dnp_point_links": {
             (
                 objects.get(row.get("ObjSequenceId")),
@@ -604,7 +903,12 @@ def configuration_semantics(path: str) -> dict[str, set[tuple]]:
             for row in rows["(12) DNP3 Controlling Station P"]
             if row.get("ObjSequenceId", "") != ""
         },
-        "data_logs": {(row.get("LogName"),) for row in rows["(26) Data Logs"]},
+        "data_logs": {(row.get("LogName"), row.get("Location")) for row in rows["(26) Data Logs"]},
+        "data_log_links": {
+            (row.get("ObjName"), row.get("DataLoggingLogFileName"))
+            for row in rows["(2) Objects"]
+            if row.get("DataLoggingLogFileName", "") != ""
+        },
     }
 
 
@@ -671,6 +975,7 @@ def create_workbook_copy(
     patches: list[dict] | None = None,
     *,
     additions: list[dict] | None = None,
+    project_settings: dict[str, str | int | float | bool] | None = None,
     overwrite: bool = False,
 ) -> dict:
     """Patch or clone rows by stable machine fields into a separate XLS copy."""
@@ -682,13 +987,43 @@ def create_workbook_copy(
         raise BulkEditError("output_path must differ from template_path")
     if output.exists() and not overwrite:
         raise BulkEditError(f"Output exists (set overwrite=true to replace it): {output}")
-    if not patches and not additions:
-        raise BulkEditError("At least one patch or addition is required")
+    if not patches and not additions and not project_settings:
+        raise BulkEditError("At least one patch, addition, or project setting is required")
 
     from xlutils.copy import copy
 
     writable = copy(readable)
     changes = []
+    if project_settings:
+        settings_sheet = _sheet_with_prefix(readable, "(1) Project Settings")
+        settings_index = readable.sheet_names().index(settings_sheet.name)
+        out_settings = writable.get_sheet(settings_index)
+        setting_rows: dict[str, list[int]] = {}
+        for row in range(1, settings_sheet.nrows):
+            key = str(settings_sheet.cell_value(row, 0))
+            if key:
+                setting_rows.setdefault(key, []).append(row)
+        for key, new_value in project_settings.items():
+            matches = setting_rows.get(str(key), [])
+            if len(matches) != 1:
+                raise BulkEditError(
+                    f"Project setting {key!r} selected {len(matches)} rows; exactly one is required"
+                )
+            if isinstance(new_value, (dict, list)) or new_value is None:
+                raise BulkEditError(
+                    f"Value for project setting {key!r} must be a string, number, or boolean"
+                )
+            row = matches[0]
+            old_value = _normalize(settings_sheet.cell_value(row, 2))
+            out_settings.write(row, 2, new_value)
+            changes.append({
+                "operation": "update_project_setting",
+                "sheet": settings_sheet.name,
+                "row": row + 1,
+                "setting": str(key),
+                "old": old_value,
+                "new": new_value,
+            })
     for patch_index, patch in enumerate(patches or []):
         sheet_name = str(patch.get("sheet", ""))
         match = patch.get("match")
@@ -741,10 +1076,16 @@ def create_workbook_copy(
     for addition_index, addition in enumerate(additions or []):
         sheet_name = str(addition.get("sheet", ""))
         clone = addition.get("clone")
+        blank = addition.get("blank") is True
         values = addition.get("values")
-        if not sheet_name or not isinstance(clone, dict) or not clone:
+        if not sheet_name or (not blank and (not isinstance(clone, dict) or not clone)):
             raise BulkEditError(
-                f"additions[{addition_index}] requires sheet and non-empty clone match"
+                f"additions[{addition_index}] requires sheet and either a non-empty "
+                "clone match or blank=true"
+            )
+        if blank and clone:
+            raise BulkEditError(
+                f"additions[{addition_index}] cannot combine clone with blank=true"
             )
         if not isinstance(values, dict) or not values:
             raise BulkEditError(f"additions[{addition_index}] requires non-empty values")
@@ -757,29 +1098,34 @@ def create_workbook_copy(
             ) from exc
         fields = [str(sheet.cell_value(1, col)) for col in range(sheet.ncols)]
         columns = {field: col for col, field in enumerate(fields) if field}
-        unknown = sorted((set(clone) | set(values)) - set(columns))
+        unknown = sorted((set(clone or {}) | set(values)) - set(columns))
         if unknown:
             raise BulkEditError(f"Unknown fields for sheet '{sheet_name}': {unknown}")
-        clone_rows = [
-            row
-            for row in range(2, sheet.nrows)
-            if all(
-                _normalize(sheet.cell_value(row, columns[key])) == _normalize(value)
-                for key, value in clone.items()
-            )
-        ]
-        if len(clone_rows) != 1:
-            raise BulkEditError(
-                f"Addition {addition_index} clone selected {len(clone_rows)} rows in "
-                f"'{sheet_name}'; exactly one is required"
-            )
-        source_row = clone_rows[0]
+        source_row = None
+        if not blank:
+            clone_rows = [
+                row
+                for row in range(2, sheet.nrows)
+                if all(
+                    _normalize(sheet.cell_value(row, columns[key])) == _normalize(value)
+                    for key, value in clone.items()
+                )
+            ]
+            if len(clone_rows) != 1:
+                raise BulkEditError(
+                    f"Addition {addition_index} clone selected {len(clone_rows)} rows in "
+                    f"'{sheet_name}'; exactly one is required"
+                )
+            source_row = clone_rows[0]
         output_row = next_rows.get(sheet_name, sheet.nrows)
         next_rows[sheet_name] = output_row + 1
         out_sheet = writable.get_sheet(sheet_index)
         for col in range(sheet.ncols):
             field = fields[col]
-            value = values.get(field, sheet.cell_value(source_row, col))
+            value = values.get(
+                field,
+                "" if source_row is None else sheet.cell_value(source_row, col),
+            )
             if isinstance(value, (dict, list)) or value is None:
                 raise BulkEditError(
                     f"Value for {sheet_name}.{field or col + 1} must be a string, number, or boolean"
@@ -789,7 +1135,8 @@ def create_workbook_copy(
             "operation": "add",
             "sheet": sheet_name,
             "row": output_row + 1,
-            "cloned_from_row": source_row + 1,
+            "cloned_from_row": None if source_row is None else source_row + 1,
+            "blank_row": source_row is None,
             "values": values,
         })
     output.parent.mkdir(parents=True, exist_ok=True)

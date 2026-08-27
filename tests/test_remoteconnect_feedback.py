@@ -78,6 +78,38 @@ class ConfigurationDeltaTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["missing_total"], 0)
 
+    def test_new_parent_entity_must_survive(self):
+        device = ("PumpPLC", "Modbus/TCP <5>", 1, "Serial 1 <1>", "10.0.0.20", 502)
+        semantics = {
+            "before": {"modbus_devices": set()},
+            "requested": {"modbus_devices": {device}},
+            "actual": {"modbus_devices": set()},
+        }
+        with patch(
+            "remoteconnect_mcp.bulk_edit.configuration_semantics",
+            side_effect=lambda path: semantics[path],
+        ):
+            result = compare_configuration_delta("before", "requested", "actual")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["missing_total"], 1)
+        self.assertEqual(result["missing"][0]["category"], "modbus_devices")
+
+    def test_changed_project_setting_must_survive(self):
+        disabled = ("RtuProjectSettingsDataLoggingSelected", "Disabled <0>")
+        enabled = ("RtuProjectSettingsDataLoggingSelected", "Enabled <1>")
+        semantics = {
+            "before": {"project_settings": {disabled}},
+            "requested": {"project_settings": {enabled}},
+            "actual": {"project_settings": {disabled}},
+        }
+        with patch(
+            "remoteconnect_mcp.bulk_edit.configuration_semantics",
+            side_effect=lambda path: semantics[path],
+        ):
+            result = compare_configuration_delta("before", "requested", "actual")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["missing"][0]["identity"], list(enabled))
+
 
 if __name__ == "__main__":
     unittest.main()
