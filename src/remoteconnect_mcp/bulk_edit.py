@@ -311,6 +311,7 @@ def create_objects_copy(
     modbus_status_rows = _rows_by_prefix(book, "(13) Modbus Server Device - Obj")
     scanner_rows = _rows_by_prefix(book, "(10) Modbus Scanners")
     scanner_mapping_rows = _rows_by_prefix(book, "(14) Modbus Scanner - Obj")
+    original_scanner_mapping_rows = list(scanner_mapping_rows)
     dnp_devices = _rows_by_prefix(book, "(5) DNP3 Controlling Station De")
     dnp_points = _rows_by_prefix(book, "(6) DNP3 Controlling Station Po")
     dnp_status_rows = _rows_by_prefix(book, "(11) DNP3 Controlling Station D")
@@ -481,7 +482,8 @@ def create_objects_copy(
                     candidates = [
                         row for row in scanner_mapping_rows
                         if row.get("PointScannerSequenceId") == scanner["ScannerSequenceId"]
-                    ] or scanner_mapping_rows[:1]
+                        and row in original_scanner_mapping_rows
+                    ] or original_scanner_mapping_rows[:1]
                     if candidates:
                         prototype_mapping = candidates[0]
                         clone = {
@@ -827,7 +829,13 @@ def configuration_semantics(path: str) -> dict[str, set[tuple]]:
     }
     objects = {row.get("ObjSequenceId"): row.get("ObjName") for row in rows["(2) Objects"]}
     enabled_objects = {
-        (row.get("ObjName"),)
+        (
+            row.get("ObjName"),
+            row.get("DataType"),
+            row.get("LogicVariableType"),
+            row.get("ModbusRegister"),
+            row.get("Dnp3PointNumber"),
+        )
         for row in rows["(2) Objects"]
         if str(row.get("EnableImport", "")).startswith("On")
     }
@@ -857,7 +865,14 @@ def configuration_semantics(path: str) -> dict[str, set[tuple]]:
             for row in rows["(9) Modbus Server Devices"]
         },
         "modbus_scanners": {
-            (modbus_devices.get(row.get("DeviceSequenceId")), row.get("RegisterStartAddr"), row.get("RegisterQuantity"))
+            (
+                modbus_devices.get(row.get("DeviceSequenceId")),
+                row.get("RegisterStartAddr"),
+                row.get("RegisterQuantity"),
+                row.get("Operation"),
+                row.get("ModbusDataType"),
+                row.get("ObjectType"),
+            )
             for row in rows["(10) Modbus Scanners"]
         },
         "modbus_scanner_links": {

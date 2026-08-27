@@ -20,6 +20,7 @@ gh_*_windows_amd64.zip
 *.ztx
 *.bak
 *.BAK
+!examples/comprehensive_demo/RemoteConnect_All_Objects_Demo.stu
 
 # DDT Mirror moved to its own repository (github.com/apexsotjo-blip/
 # ddt-mirror-app, private) - full history preserved via git subtree split.

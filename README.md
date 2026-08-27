@@ -17,6 +17,7 @@ AI agent ──MCP/stdio──> remoteconnect-mcp ──COM/UDE──> UnitySoCo
 - **x70 configuration**: headlessly export the native 25-sheet RemoteConnect XLS, patch typed fields, import to a new PRJ copy, parse per-object errors, save, and reopen; source projects are never modified
 - **Relationship-aware objects**: clone native object prototypes together with Browser, physical-I/O, DNP3, Modbus-server, or Modbus-scanner links; validate cross-sheet keys and prove requested additions survived a native post-import re-export
 - **Typed parent creation**: create Browser Lists, data logs, Modbus/TCP devices and scanners, and DNP3 controlling-station devices and points—even when their native XLS tables start empty—then attach objects in the same staged workbook
+- **Validated comprehensive demo**: [`examples/comprehensive_demo`](examples/comprehensive_demo) contains a generated PRJ/STU/XLS bundle covering every installed SCADAPack object DDT, all four Modbus register spaces, all five supported DNP3 point classes, data logging, Browser links, and build-checked ST logic
 - **Logic projects**: create SCADAPack47x/57x/1070 UnitySoControl projects or standard Control Expert projects, open/save `.stu`/`.sta`, and import/export `.xef`/`.zef`
 - **Browse**: tasks, sections, variables, DFB/DDT types, CPU/hardware info, build state
 - **Program**: create/read/delete sections in **ST, LD, FBD, SFC, IL**; write logic by importing Control Expert XML (the AI reads an existing section's XML once and mirrors the schema — validated round-trip for all five languages)

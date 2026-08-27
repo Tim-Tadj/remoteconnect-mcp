@@ -178,6 +178,15 @@ the simulator, and read/write live values — guided the whole way.
 - RemoteConnect-generated placeholder association rows are detected and filled rather
   than treated as duplicate scanner/DNP3 addresses.
 
+### Comprehensive generated demo (v0.16.1)
+
+- A reproducible PRJ/STU/XLS example covers all nine installed SCADAPack object DDTs,
+  four Modbus address spaces, five DNP3 point classes, Browser and data-log links, and
+  a build-checked ST section that references every configured object family.
+- Strict semantics now preserve object data/logic types, protocol addresses, and scanner
+  operation/data/object types. Multiple associations can be authored safely when the
+  native scanner mapping table starts empty.
+
 0. **Advanced SFC**: mine the spec's `linkSFC` directed-link pin-coordinate rules (in
    `_docspec/UDEXMLUnityProIECLanguages.txt`), then build-validate alternative + parallel
    branches, macro steps, multi-action qualifiers; upgrade the SFC reference/example.
