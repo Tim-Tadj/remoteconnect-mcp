@@ -1,11 +1,12 @@
 param(
     [Parameter(Mandatory=$true)][string]$Python,
-    [string]$Workspace = (Join-Path $PSScriptRoot 'workspace'),
+    [string]$Workspace = '',
     [string]$XpdfContext = 'C:\ProgramData\Schneider Electric\CommonControlExpert\16.2\Xpdf\SCBForSCADAPack.xpdf',
     [string]$RemoteConnectHome = ''
 )
 $ErrorActionPreference = 'Stop'
 $bundleRoot = [IO.Path]::GetFullPath($PSScriptRoot)
+if (-not $Workspace) { $Workspace = Join-Path $bundleRoot 'workspace' }
 $manifest = Get-Content -LiteralPath (Join-Path $bundleRoot 'build-manifest.json') -Raw | ConvertFrom-Json
 foreach ($entry in $manifest.files.PSObject.Properties) {
     $payloadPath = [IO.Path]::GetFullPath((Join-Path $bundleRoot $entry.Name))
