@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -22,6 +23,25 @@ DEFAULT_INSTALL = Path(r"C:\Program Files (x86)\Schneider Electric\RemoteConnect
 
 class NativeBridgeError(RuntimeError):
     pass
+
+
+def _run_system_process(*args, **kwargs):
+    if os.name != "nt" or not getattr(sys, "frozen", False):
+        return subprocess.run(*args, **kwargs)
+    import ctypes
+
+    set_directory = ctypes.WinDLL("kernel32", use_last_error=True).SetDllDirectoryW
+    set_directory.argtypes = [ctypes.c_wchar_p]
+    set_directory.restype = ctypes.c_int
+    bundle_directory = str(sys._MEIPASS)
+    # The bundled 64-bit DLL directory must not reach the installed x86 helper.
+    if not set_directory(None):
+        raise NativeBridgeError(f"Cannot clear DLL search directory before native process: {ctypes.WinError(ctypes.get_last_error())}")
+    try:
+        return subprocess.run(*args, **kwargs)
+    finally:
+        if not set_directory(bundle_directory):
+            raise NativeBridgeError(f"Cannot restore bundled DLL search directory after native process: {ctypes.WinError(ctypes.get_last_error())}")
 
 
 def _install_path() -> Path:
@@ -113,7 +133,7 @@ def _build_bridge(build_dir: Path) -> Path:
     command = [str(compiler), "/nologo", "/target:exe", "/platform:x86", f"/out:{executable}"]
     command.extend(f"/reference:{path}" for path in refs)
     command.append(str(source))
-    completed = subprocess.run(command, capture_output=True, text=True, timeout=120)
+    completed = _run_system_process(command, capture_output=True, text=True, timeout=120)
     if completed.returncode:
         raise NativeBridgeError(f"Native bridge compilation failed: {completed.stdout}\n{completed.stderr}".strip())
     app_config = install / "RemoteConnect.exe.config"
@@ -162,7 +182,7 @@ def _run(project: Path, operation: str, workbook: Path, *, timeout: int = 300) -
     # helper which another local process could have replaced between sessions.
     with tempfile.TemporaryDirectory(prefix="remoteconnect-native-") as temporary:
         executable = _build_bridge(Path(temporary))
-        completed = subprocess.run(
+        completed = _run_system_process(
             [str(executable), str(project), operation, str(workbook)],
             capture_output=True,
             text=True,

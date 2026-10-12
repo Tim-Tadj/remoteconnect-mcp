@@ -1,70 +1,92 @@
-# Windows client builds
+# Easy Windows installation
 
-Release assets contain a server wheel, pinned Windows dependency wheels and a
-client-specific plugin/configuration. They target **CPython 3.12 x64 on Windows**.
-Python, Codex/Claude Code, licensed Schneider software and the SCADAPack XPDF
-context must already be installed. Vendor DLLs, licences and customer projects
-are not redistributed.
+Portable releases target Windows x64 and include CPython 3.12, the server and
+locked dependencies. No Python installation, pip commands or dependency downloads
+are needed. Licensed Schneider software and customer projects are installed
+separately. These builds are unsigned.
 
-## Install a downloaded bundle
+## ChatGPT desktop app
 
-Extract the Codex or Claude Code ZIP into a permanent local directory. In that
-directory, run this with your installed CPython 3.12 interpreter:
+1. Download and extract the ChatGPT ZIP into a permanent local folder.
+2. Double-click `Install-ChatGPT.cmd`.
+3. Review RemoteConnect MCP in ChatGPT and select **Install**. Start a new local chat.
+
+Setup verifies the payload hashes and included runtime, discovers a single
+installed SCADAPack XPDF context, and creates an empty `workspace` folder.
+Copy trusted project bundles into it. Keep engineering originals elsewhere.
+The installer opens the app's plugin review page; it does not edit global client
+configuration or approve installation on the user's behalf.
+
+For a different disposable folder or several installed Schneider contexts:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\Setup.ps1 -Python 'C:\Python312\python.exe'
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-ChatGPT.ps1 -Workspace 'D:\RemoteConnect-MCP-Work' -XpdfContext 'C:\Path\To\SCBForSCADAPack.xpdf'
 ```
 
-The execution policy applies only to that PowerShell process. Setup checks the
-payload hashes, creates `.runtime`, installs the pinned wheels without network
-access and writes local client configuration. It does not modify global client
-settings. The default disposable project directory is `workspace` beside Setup.
+This follows [OpenAI's desktop plugin link](https://learn.chatgpt.com/docs/app/commands)
+and [local plugin packaging](https://developers.openai.com/plugins/build/plugins).
+ChatGPT desktop and Codex share local MCP configuration. This package uses
+Windows local execution; ChatGPT web/cloud does not acquire the workstation's
+Schneider runtime. See [OpenAI's MCP host documentation](https://learn.chatgpt.com/docs/extend/mcp).
 
-For a different installed context or disposable workspace:
+Keep the extracted folder in place because the cached plugin's MCP command
+refers to its runtime. After moving it, rerun installation and refresh the plugin.
+Avoid registering the same server twice.
+
+## Claude Desktop MCPB
+
+Open the `.mcpb` file with Claude Desktop and review the installation. The Python
+runtime is inside the bundle. Optional workspace and XPDF pickers support custom
+paths; blank values use `%LOCALAPPDATA%\RemoteConnectMCP\workspace` and discover
+the installed context. Copy trusted project bundles into that workspace.
+
+MCPB is a ZIP plus a manifest supported by Claude Desktop. OpenAI documentation
+does not establish a ChatGPT MCPB importer, so use the ChatGPT ZIP for that app.
+See the [official MCPB repository](https://github.com/modelcontextprotocol/mcpb)
+and [manifest specification](https://github.com/modelcontextprotocol/mcpb/blob/main/MANIFEST.md).
+
+## Codex and Claude Code
+
+Extract the appropriate ZIP, then run Setup and the chosen launcher:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\Setup.ps1 -Python 'C:\Python312\python.exe' -Workspace 'D:\RemoteConnect-MCP-Work' -XpdfContext 'C:\ProgramData\Schneider Electric\CommonControlExpert\16.2\Xpdf\SCBForSCADAPack.xpdf' -RemoteConnectHome 'D:\Program Files\RemoteConnect'
-```
-
-Use a separate working directory, and copy trusted PRJ/STU project files into
-it. Both clients start in that directory. Online operations remain disabled.
-
-Launch the chosen client with `Start-Codex.ps1` or `Start-ClaudeCode.ps1`.
-The Codex launcher requires PowerShell 7.3 or later so quoted configuration
-arguments reach the CLI intact:
-
-```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Setup.ps1
+# Codex, using PowerShell 7.3 or later:
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\Start-Codex.ps1
-# For the Claude Code bundle:
+# Claude Code:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Start-ClaudeCode.ps1
 ```
-The Codex launcher uses per-session MCP configuration. The Claude launcher
-loads `claude-plugin` with `--plugin-dir`. The bundles also contain local
-marketplace metadata for optional plugin installation, described in their
-READMEs. Avoid loading the same server twice in one client session.
 
-After moving an extracted bundle, rerun Setup to update its absolute runtime
-and project paths. Keep the extracted directory when using a cached plugin,
-because its MCP command points to that directory's runtime.
+The execution policy applies only to that process. Codex's launcher uses
+per-session configuration and requires modern argument preservation. Claude
+Code uses `--plugin-dir`. The READMEs describe optional permanent registrations.
+Setup accepts `-Workspace`, `-XpdfContext` and `-RemoteConnectHome`.
+
+## Custom MCP form fallback
+
+In the form shown by the ChatGPT desktop app, set **Name** to `remoteconnect`
+and **Command to launch** to the extracted `runtime\remoteconnect-mcp.exe`'s
+absolute path. Leave arguments, environment fields and working directory blank.
+The server then uses `%LOCALAPPDATA%\RemoteConnectMCP\workspace`.
+
+All portable launches enforce the 42-tool offline profile, disabled online
+operations and a single disposable read/write workspace. These application
+checks are not an OS sandbox for vendor assemblies. A portable install does not
+establish native configuration import, manual GUI or physical equipment behaviour.
 
 ## Build from source
 
-Use a clean committed checkout of the fork and the locked development runtime:
+Use a clean committed fork checkout on Windows:
 
 ```powershell
-uv sync --frozen --no-dev --python 3.12
-.\.venv\Scripts\python.exe -m ensurepip
+uv sync --frozen --group build --python 3.12
 .\.venv\Scripts\python.exe tools\build_client_bundles.py
 ```
 
-The build needs `uv`, `git`, pip and package-index access for the dependency
-download. It records the source commit, checks the server wheel's contents and
-produces two ZIPs, the shared wheel and `SHA256SUMS.txt` under `dist/<version>`.
-It refuses an existing release directory rather than replacing released files.
-Dependencies install offline from the finished bundle; creating the bundle
-may download the pinned dependency wheels.
-
-Plugin layouts follow [official OpenAI packaging documentation](https://developers.openai.com/plugins/build/plugins)
-and the [Claude Code manifest reference](https://code.claude.com/docs/en/plugins-reference).
-Local stdio execution requires the Windows engineering host. A cloud executor
-does not gain access to the workstation's COM registrations from this ZIP.
+The build needs `uv`, `git`, Windows x64 CPython 3.12 and package-index access
+to create the locked build environment. PyInstaller is a build-only dependency.
+The builder records the commit, checks the server wheel and portable runtime,
+preserves Python/dependency licences and produces three ZIPs, one MCPB, the
+shared wheel and `SHA256SUMS.txt` under `dist/<version>`. It refuses existing output.
+The finished packages launch without dependency downloads. The standalone wheel
+remains available for source-style deployments using an installed Python runtime.

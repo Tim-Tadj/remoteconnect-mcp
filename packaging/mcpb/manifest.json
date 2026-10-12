@@ -1,0 +1,56 @@
+{
+  "manifest_version": "0.3",
+  "name": "remoteconnect-mcp",
+  "display_name": "RemoteConnect MCP",
+  "version": "__VERSION__",
+  "description": "Inspect and edit disposable RemoteConnect project copies on Windows.",
+  "long_description": "Local offline tools for SCADAPack x70 project inspection and editing. Includes the Python runtime and dependencies. Requires separately installed, licensed Schneider software. The 42-tool offline profile excludes equipment operations. Keep engineering originals outside the disposable workspace.",
+  "author": {
+    "name": "Tim-Tadj and RemoteConnect MCP contributors"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Tim-Tadj/remoteconnect-mcp.git"
+  },
+  "homepage": "https://github.com/Tim-Tadj/remoteconnect-mcp",
+  "documentation": "https://github.com/Tim-Tadj/remoteconnect-mcp/blob/main/docs/BUILDS.md",
+  "support": "https://github.com/Tim-Tadj/remoteconnect-mcp/issues",
+  "license": "MIT",
+  "server": {
+    "type": "binary",
+    "entry_point": "runtime/remoteconnect-mcp.exe",
+    "mcp_config": {
+      "command": "${__dirname}/runtime/remoteconnect-mcp.exe",
+      "env": {
+        "CE_MCP_WORKSPACE": "${user_config.workspace}",
+        "CE_MCP_XPDF_CONTEXT": "${user_config.xpdf_context}",
+        "CE_MCP_TOOL_PROFILE": "offline",
+        "CE_MCP_ENABLE_ONLINE": "0"
+      }
+    }
+  },
+  "compatibility": {
+    "platforms": ["win32"]
+  },
+  "tools_generated": true,
+  "prompts_generated": true,
+  "keywords": ["mcp", "remoteconnect", "scadapack", "windows", "offline"],
+  "user_config": {
+    "workspace": {
+      "type": "directory",
+      "title": "Disposable project workspace",
+      "description": "Optional folder for project copies. Leave blank to use %LOCALAPPDATA%\\RemoteConnectMCP\\workspace. Keep engineering originals elsewhere.",
+      "required": false,
+      "default": "",
+      "multiple": false
+    },
+    "xpdf_context": {
+      "type": "file",
+      "title": "Installed SCADAPack XPDF context",
+      "description": "Optional SCBForSCADAPack.xpdf file from the licensed Schneider installation. Leave blank for automatic discovery.",
+      "required": false,
+      "default": "",
+      "multiple": false
+    }
+  }
+}

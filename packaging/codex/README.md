@@ -1,23 +1,26 @@
 # RemoteConnect MCP for Codex
 
 Windows x64 prerelease bundle for native Codex sessions. It contains the server
-wheel, locked dependency wheels and an offline profile. Schneider software and
+executable, Python runtime, locked dependencies and an offline profile. Schneider software and
 customer projects are installed separately.
 
 Extract the ZIP to a permanent directory on the engineering workstation. In
 PowerShell 7.3 or later (`pwsh`), from that directory:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\Setup.ps1 -Python 'C:\path\to\Python312\python.exe'
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Setup.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\Start-Codex.ps1
 ```
 
-Use CPython 3.12 x64. Setup installs from the bundled wheelhouse without fetching
-packages and writes absolute local launch paths. Optional setup arguments are
+Python is included. Setup checks the bundled runtime and writes absolute local
+launch paths without downloading packages. Optional setup arguments are
 `-Workspace`, `-XpdfContext` and `-RemoteConnectHome`. The default workspace is
 the bundle's `workspace` directory. Place disposable project copies there.
 The generated configuration uses `CE_MCP_TOOL_PROFILE=offline` and
 `CE_MCP_ENABLE_ONLINE=0`.
+
+For the ChatGPT desktop app, double-click `Install-ChatGPT.cmd`, then review
+and install the plugin in the app. No custom MCP form fields are required.
 
 `Start-Codex.ps1` requires PowerShell 7.3 or later to preserve quoted CLI
 arguments, and passes the generated MCP settings to one Codex session. Setup

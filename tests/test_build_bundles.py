@@ -35,12 +35,12 @@ class ClientBundleTests(unittest.TestCase):
         self.bundle.mkdir()
         self.xpdf = self.directory / "installed.xpdf"
         self.xpdf.write_bytes(b"test fixture")
-        self.version = "0.20.0rc1"
+        self.version = "0.20.0rc2"
 
     def prepare(self, client):
         manifest = {"version": self.version, "client": client}
         (self.bundle / "build-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-        plugin = self.bundle / ("codex-plugin" if client == "codex" else "claude-plugin")
+        plugin = self.bundle / ("codex-plugin" if client in {"codex", "chatgpt"} else "claude-plugin")
         plugin.mkdir()
         template = plugin / ".mcp.json.template"
         template.write_text("immutable template", encoding="utf-8")
@@ -59,8 +59,8 @@ class ClientBundleTests(unittest.TestCase):
         self.assertEqual(server["env"]["CE_MCP_ENABLE_ONLINE"], "0")
         for key in ("CE_MCP_READ_ROOTS", "CE_MCP_WRITE_ROOTS"):
             self.assertEqual(Path(server["env"][key]), workspace.resolve())
-        self.assertEqual(Path(server["command"]), self.bundle.resolve() / ".runtime" / "Scripts" / "python.exe")
-        self.assertEqual(server["args"], ["-m", "remoteconnect_mcp"])
+        self.assertEqual(Path(server["command"]), self.bundle.resolve() / "runtime" / "remoteconnect-mcp.exe")
+        self.assertEqual(server["args"], [])
         generated = json.loads((plugin / ".mcp.json").read_text(encoding="utf-8"))
         self.assertEqual(generated["mcpServers"]["remoteconnect"], server)
         settings = tomllib.loads((self.bundle / "codex.toml").read_text(encoding="utf-8"))["mcp_servers"]["remoteconnect"]
@@ -95,6 +95,21 @@ class ClientBundleTests(unittest.TestCase):
         self.assertFalse((self.bundle / "codex.toml").exists())
         self.assertFalse((self.bundle / "codex-args.json").exists())
 
+    def test_chatgpt_uses_local_codex_plugin_with_absolute_portable_runtime(self):
+        plugin, server = self.configure(self.directory / "disposable", "chatgpt")
+        self.assertEqual(plugin.name, "codex-plugin")
+        self.assertTrue(Path(server["command"]).is_absolute())
+        self.assertEqual(server["args"], [])
+        self.assertEqual(server["env"]["CE_MCP_WORKSPACE"], server["env"]["CE_MCP_READ_ROOTS"])
+
+    def test_mcpb_template_uses_bundled_binary_and_only_workspace_context_options(self):
+        manifest = json.loads((ROOT / "packaging/mcpb/manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["server"]["type"], "binary")
+        self.assertEqual(manifest["server"]["mcp_config"]["command"], "${__dirname}/runtime/remoteconnect-mcp.exe")
+        self.assertEqual(manifest["compatibility"]["platforms"], ["win32"])
+        self.assertEqual(set(manifest["user_config"]), {"workspace", "xpdf_context"})
+        self.assertEqual(manifest["server"]["mcp_config"]["env"]["CE_MCP_ENABLE_ONLINE"], "0")
+
     def test_version_mismatch_does_not_create_workspace_or_configuration(self):
         plugin = self.prepare("codex")
         workspace = self.directory / "disposable"
@@ -105,7 +120,7 @@ class ClientBundleTests(unittest.TestCase):
 
     def test_workspace_cannot_grant_access_to_installer_or_runtime_files(self):
         plugin = self.prepare("codex")
-        unsafe = [self.bundle, self.bundle.parent, self.bundle / ".runtime" / "projects",
+        unsafe = [self.bundle, self.bundle.parent, self.bundle / "runtime" / "projects",
                   self.bundle / "codex-plugin" / "projects", self.bundle / "wheelhouse" / "projects"]
         with patch.object(configurator, "version", return_value=self.version):
             for workspace in unsafe:
@@ -121,7 +136,7 @@ class ClientBundleTests(unittest.TestCase):
     def test_network_and_multiple_root_workspace_inputs_are_rejected(self):
         self.prepare("codex")
         with patch.object(configurator, "version", return_value=self.version):
-            for workspace in (r"\\server\share", "//server/share", r"D:\one;D:\two"):
+            for workspace in (r"\\server\share", "//server/share", r"D:\one;D:\two", "https://server/projects", r"D:\projects:stream", "${user_config.workspace}"):
                 with self.subTest(workspace=workspace), self.assertRaises(ValueError):
                     configurator.configure(self.bundle, workspace, self.xpdf)
 

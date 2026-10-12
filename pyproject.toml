@@ -1,6 +1,6 @@
 [project]
 name = "remoteconnect-mcp"
-version = "0.20.0rc1"
+version = "0.20.0rc2"
 description = "MCP server for Schneider Electric RemoteConnect and SCADAPack x70 logic projects"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -17,6 +17,9 @@ dependencies = [
 
 [project.scripts]
 remoteconnect-mcp = "remoteconnect_mcp.server:main"
+
+[dependency-groups]
+build = ["pyinstaller==6.22.3; sys_platform == 'win32'"]
 
 [build-system]
 requires = ["setuptools>=68"]

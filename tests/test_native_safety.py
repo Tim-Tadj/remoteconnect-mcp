@@ -1,9 +1,10 @@
 import os
+import subprocess
 import tempfile
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 
 from remoteconnect_mcp.atomic_file import ensure_separate_output, staged_output
 from remoteconnect_mcp.bulk_edit import (
@@ -16,11 +17,46 @@ from remoteconnect_mcp.native_bridge import (
     _parse_output,
     _install_path,
     _registered_install_paths,
+    _run_system_process,
     export_configuration,
     import_configuration_copy,
 )
 from remoteconnect_mcp.remoteconnect import inspect_project, read_import_report
 from remoteconnect_mcp.schema import _load_schema, validate
+
+
+class FrozenNativeProcessTests(unittest.TestCase):
+    def test_system_process_clears_and_restores_bundled_dll_search(self):
+        import ctypes
+
+        changes = []
+        set_directory = Mock(side_effect=lambda value: changes.append(value) or True)
+        completed = object()
+        def run(*args, **kwargs):
+            self.assertEqual(changes, [None])
+            return completed
+        with patch("remoteconnect_mcp.native_bridge.sys.frozen", True, create=True), patch("remoteconnect_mcp.native_bridge.sys._MEIPASS", "bundled-runtime", create=True), patch("ctypes.WinDLL", return_value=types.SimpleNamespace(SetDllDirectoryW=set_directory)), patch("remoteconnect_mcp.native_bridge.subprocess.run", side_effect=run) as process:
+            result = _run_system_process(["compiler.exe"], capture_output=True, timeout=120)
+        self.assertIs(result, completed)
+        self.assertEqual(changes, [None, "bundled-runtime"])
+        self.assertEqual(set_directory.argtypes, [ctypes.c_wchar_p])
+        self.assertIs(set_directory.restype, ctypes.c_int)
+        process.assert_called_once_with(["compiler.exe"], capture_output=True, timeout=120)
+
+    def test_failed_system_process_still_restores_bundled_dll_search(self):
+        set_directory = Mock(return_value=True)
+        failure = subprocess.TimeoutExpired(["helper.exe"], 300)
+        with patch("remoteconnect_mcp.native_bridge.sys.frozen", True, create=True), patch("remoteconnect_mcp.native_bridge.sys._MEIPASS", "bundled-runtime", create=True), patch("ctypes.WinDLL", return_value=types.SimpleNamespace(SetDllDirectoryW=set_directory)), patch("remoteconnect_mcp.native_bridge.subprocess.run", side_effect=failure), self.assertRaises(subprocess.TimeoutExpired) as caught:
+            _run_system_process(["helper.exe"], timeout=300)
+        self.assertIs(caught.exception, failure)
+        self.assertEqual(set_directory.call_args_list, [call(None), call("bundled-runtime")])
+
+    def test_dll_search_failures_are_reported_without_claiming_process_success(self):
+        for outcomes, message, process_started in (([False], "Cannot clear", False), ([True, False], "Cannot restore", True)):
+            set_directory = Mock(side_effect=outcomes)
+            with self.subTest(outcomes=outcomes), patch("remoteconnect_mcp.native_bridge.sys.frozen", True, create=True), patch("remoteconnect_mcp.native_bridge.sys._MEIPASS", "bundled-runtime", create=True), patch("ctypes.WinDLL", return_value=types.SimpleNamespace(SetDllDirectoryW=set_directory)), patch("remoteconnect_mcp.native_bridge.subprocess.run") as process, patch("ctypes.get_last_error", return_value=5), self.assertRaisesRegex(NativeBridgeError, message):
+                _run_system_process(["helper.exe"])
+            self.assertEqual(process.called, process_started)
 
 
 class AtomicPublicationTests(unittest.TestCase):

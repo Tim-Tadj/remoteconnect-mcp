@@ -43,12 +43,15 @@ AI agent ──MCP/stdio──> remoteconnect-mcp ──COM/UDE──> UnitySoCo
 ## Requirements
 
 - Windows with **EcoStruxure Control Expert** (or Unity Pro) installed and licensed; tested against **Control Expert 14.0**, but any version that registers `PSBroker.PServerBroker.1` should work (the UDE automation server ships with Control Expert itself; the separate UDE package is only needed for documentation)
-- **Python 3.10+** with `pywin32`
+- **Python 3.10+** with `pywin32` for source/wheel installation; portable builds include Python
 - The server must run **on the same machine** as Control Expert (DCOM remoting is possible but not configured here)
 
 ## Install
 
-For the packaged Codex and Claude Code builds, see [release installation](docs/BUILDS.md).
+For the easiest setup, use the [portable release builds](docs/BUILDS.md).
+ChatGPT desktop has an `Install-ChatGPT.cmd` shortcut, and Claude Desktop has a
+single `.mcpb` file. Both include Python and dependencies. Codex and Claude Code
+ZIPs are also available.
 
 ```powershell
 cd remoteconnect-mcp

@@ -115,7 +115,7 @@ file opening.
 
 ## Validation
 
-The final regression run passed 123 tests, with one further test skipped
+At audit completion, the regression run passed 123 tests, with one further test skipped
 because this Windows account cannot create a symlink. The hard-link alias test
 passed outside the filesystem sandbox. Tests cover COM ownership/timeouts and
 close failures using fakes, archive limits, atomic publication, cancellation,

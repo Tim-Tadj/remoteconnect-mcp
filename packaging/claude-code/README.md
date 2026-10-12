@@ -1,25 +1,24 @@
 # RemoteConnect MCP for Claude Code on Windows
 
 Extract this ZIP to a permanent directory on the Windows engineering workstation.
-It contains the MCP server, a pinned wheelhouse and local setup and launch scripts.
+It contains the MCP executable, Python runtime, pinned dependencies and local scripts.
 It starts with the 42-tool `offline` profile and disables online equipment tools.
 
-You need Windows x64 CPython 3.12, Claude Code installed on Windows and the
-licensed Schneider software required by your project. Python, vendor DLLs,
-licences and customer projects are not included.
+You need Windows x64, Claude Code installed on Windows and the licensed
+Schneider software required by your project. Python is included; vendor DLLs,
+licences and customer projects are installed separately.
 
 ## Set up and start
 
-Open PowerShell in the extracted directory. Supply the absolute path of your
-Windows x64 CPython 3.12 interpreter:
+Open PowerShell in the extracted directory:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\Setup.ps1 -Python "C:\Path\To\Python312\python.exe"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Setup.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Start-ClaudeCode.ps1
 ```
 
-Setup checks the bundle's file hashes, creates `.runtime` and installs the
-included wheels without downloading dependencies. It generates the plugin's
+Setup checks the bundle's file hashes and included runtime without downloading
+dependencies. It generates the plugin's
 `.mcp.json` with absolute paths. It does not register anything in Claude settings.
 The launcher opens Claude Code in the configured workspace and loads the local
 plugin using `--plugin-dir`.
@@ -30,10 +29,10 @@ originals outside it. To use another disposable workspace or Schneider context,
 run setup with the appropriate paths:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\Setup.ps1 -Python "C:\Path\To\Python312\python.exe" -Workspace "D:\RemoteConnect-MCP-Work" -XpdfContext "C:\Path\To\SCBForSCADAPack.xpdf"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Setup.ps1 -Workspace "D:\RemoteConnect-MCP-Work" -XpdfContext "C:\Path\To\SCBForSCADAPack.xpdf"
 ```
 
-The default XPDF path is the Common Control Expert 16.2 SCADAPack context.
+Setup discovers a single installed SCADAPack XPDF context automatically.
 Use `-RemoteConnectHome "C:\Path\To\RemoteConnect"` for a non-default vendor
 installation. Re-run setup after moving the extracted directory or changing
 these paths. The workspace allowlists are application checks, not an OS sandbox.

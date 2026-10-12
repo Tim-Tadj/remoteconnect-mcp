@@ -6,33 +6,40 @@ from importlib.metadata import version
 from pathlib import Path
 
 
-def configure(root, workspace, xpdf_context, remoteconnect_home=""):
+def configure(root, workspace=None, xpdf_context=None, remoteconnect_home=""):
     root = Path(root).resolve()
     manifest = json.loads((root / "build-manifest.json").read_text(encoding="utf-8"))
     if version("remoteconnect-mcp") != manifest["version"]:
         raise ValueError("Installed server version does not match this bundle")
-    if str(workspace).startswith(("\\\\", "//")) or ";" in str(workspace):
+    client = manifest["client"]
+    if client not in {"codex", "chatgpt", "claude-code"}:
+        raise ValueError("Unknown bundle client")
+    workspace = workspace or root / "workspace"
+    if str(workspace).startswith(("\\\\", "//")) or any(value in str(workspace) for value in ("://", ";", "${")) or ":" in str(workspace)[2:]:
         raise ValueError("Workspace must be a local directory without a semicolon")
     workspace = Path(workspace).expanduser().resolve()
     if root.is_relative_to(workspace) or (workspace.is_relative_to(root) and not workspace.is_relative_to(root / "workspace")):
         raise ValueError("Use a separate disposable project workspace")
-    xpdf = Path(xpdf_context).expanduser().resolve()
-    if not xpdf.is_file():
+    if not xpdf_context:
+        from server_launcher import discover_xpdf
+        xpdf_context = discover_xpdf()
+    if not xpdf_context or not Path(xpdf_context).is_file():
         raise ValueError("Supply the installed SCADAPack XPDF file using -XpdfContext")
+    xpdf = Path(xpdf_context).expanduser().resolve()
     workspace.mkdir(parents=True, exist_ok=True)
     environment = {
         "CE_MCP_TOOL_PROFILE": "offline", "CE_MCP_ENABLE_ONLINE": "0",
+        "CE_MCP_WORKSPACE": str(workspace),
         "CE_MCP_READ_ROOTS": str(workspace), "CE_MCP_WRITE_ROOTS": str(workspace),
         "CE_MCP_XPDF_CONTEXT": str(xpdf),
     }
     if remoteconnect_home:
         environment["REMOTECONNECT_HOME"] = str(Path(remoteconnect_home).resolve())
-    client = manifest["client"]
-    plugin = root / ("codex-plugin" if client == "codex" else "claude-plugin")
-    server = {"type": "stdio", "command": str(root / ".runtime" / "Scripts" / "python.exe"),
-              "args": ["-m", "remoteconnect_mcp"], "env": environment}
+    plugin = root / ("codex-plugin" if client in {"codex", "chatgpt"} else "claude-plugin")
+    server = {"type": "stdio", "command": str(root / "runtime" / "remoteconnect-mcp.exe"),
+              "args": [], "env": environment}
     (plugin / ".mcp.json").write_text(json.dumps({"mcpServers": {"remoteconnect": server}}, indent=2), encoding="utf-8")
-    if client == "codex":
+    if client in {"codex", "chatgpt"}:
         settings = {key: value for key, value in server.items() if key != "type"}
         settings.update(startup_timeout_sec=30, tool_timeout_sec=600, default_tools_approval_mode="writes")
         arguments = ["-C", str(workspace)]
