@@ -12,7 +12,11 @@ foreach ($entry in $manifest.files.PSObject.Properties) {
     if (-not $payloadPath.StartsWith($bundleRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
         throw 'The build manifest contains a path outside the bundle.'
     }
-    if ((Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.Value) {
+    $payloadStream = [IO.File]::OpenRead($payloadPath)
+    $hashAlgorithm = [Security.Cryptography.SHA256]::Create()
+    try { $payloadHash = [BitConverter]::ToString($hashAlgorithm.ComputeHash($payloadStream)).Replace('-', '').ToLowerInvariant() }
+    finally { $payloadStream.Dispose(); $hashAlgorithm.Dispose() }
+    if ($payloadHash -ne $entry.Value) {
         throw "Bundle checksum mismatch: $($entry.Name)"
     }
 }
