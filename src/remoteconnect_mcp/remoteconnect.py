@@ -13,7 +13,7 @@ import zipfile
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from xml.etree import ElementTree
+from .xml_safe import parse_xml_file
 
 
 REMOTE_EXTENSIONS = (".prj", ".rcz", ".stu", ".sta")
@@ -58,7 +58,7 @@ def inspect_project(path: str) -> dict:
         bundle["configuration"] = {"available": False}
         return bundle
 
-    root = ElementTree.parse(prj).getroot()
+    root = parse_xml_file(prj)
     dtms = root.findall(".//DTM")
     records = root.findall(".//InstanceDataRecord")
     bundle["configuration"] = {
@@ -92,7 +92,7 @@ def inventory_project(path: str) -> dict:
     prj = bundle["files"].get("prj")
     if not prj:
         raise ValueError(f"No paired .PRJ configuration file found for: {path}")
-    root = ElementTree.parse(prj).getroot()
+    root = parse_xml_file(prj)
     topology_ids = {
         item.attrib.get("Id", "") for item in root.findall("./Topology/TopologyRecord")
     }
@@ -138,7 +138,7 @@ _OBJECT_LINE = re.compile(r"^OBJECT:\s*(.+?)\s*$", re.IGNORECASE)
 
 def _classify_feedback(message: str) -> str:
     low = message.lower()
-    if re.search(r"\b(error|failed|invalid|rejected|cannot)\b", low):
+    if re.search(r"\b(error|failed|invalid|rejected|cannot|unable|fatal|unsuccessful)\b", low):
         return "error"
     if message.lstrip().startswith("-") or re.search(
         r"\b(warn|automatically|changed because|defaulted)\b", low
@@ -237,7 +237,7 @@ def read_import_report(log_path: str) -> dict:
         row_error = _ROW_VALIDATION.match(line)
         if table:
             detail = ""
-            if index + 1 < len(lines) and not _TABLE_VALIDATION.match(lines[index + 1][1]):
+            if index + 1 < len(lines) and not _TABLE_VALIDATION.match(lines[index + 1][1]) and not _ROW_VALIDATION.match(lines[index + 1][1]):
                 detail = lines[index + 1][1]
                 index += 1
             event = {

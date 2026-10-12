@@ -1,0 +1,11 @@
+#!/bin/sh
+# Reject every push destination except the owner's fork, including explicit URLs.
+case "$2" in
+  https://github.com/Tim-Tadj/remoteconnect-mcp|https://github.com/Tim-Tadj/remoteconnect-mcp.git|git@github.com:Tim-Tadj/remoteconnect-mcp|git@github.com:Tim-Tadj/remoteconnect-mcp.git|ssh://git@github.com/Tim-Tadj/remoteconnect-mcp|ssh://git@github.com/Tim-Tadj/remoteconnect-mcp.git)
+    exit 0
+    ;;
+  *)
+    printf '%s\n' 'Push blocked: this checkout may push only to Tim-Tadj/remoteconnect-mcp.' >&2
+    exit 1
+    ;;
+esac

@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "remoteconnect": {
+      "type": "stdio",
+      "command": "__PYTHON_EXE__",
+      "args": ["-m", "remoteconnect_mcp"],
+      "env": {
+        "CE_MCP_TOOL_PROFILE": "offline",
+        "CE_MCP_ENABLE_ONLINE": "0",
+        "CE_MCP_READ_ROOTS": "__WORKSPACE__",
+        "CE_MCP_WRITE_ROOTS": "__WORKSPACE__",
+        "CE_MCP_XPDF_CONTEXT": "__XPDF_CONTEXT__",
+        "REMOTECONNECT_HOME": "__REMOTE_HOME__"
+      }
+    }
+  }
+}

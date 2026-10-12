@@ -1,0 +1,12 @@
+{
+  "name": "remoteconnect-mcp",
+  "version": "0.20.0-rc.1",
+  "description": "Local Windows RemoteConnect x70 inspection and copy editing through MCP",
+  "author": {
+    "name": "RemoteConnect MCP contributors"
+  },
+  "homepage": "https://github.com/Tim-Tadj/remoteconnect-mcp",
+  "repository": "https://github.com/Tim-Tadj/remoteconnect-mcp",
+  "license": "MIT",
+  "keywords": ["mcp", "remoteconnect", "scadapack", "windows"]
+}

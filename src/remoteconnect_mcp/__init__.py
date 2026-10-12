@@ -1,3 +1,3 @@
 """MCP server for RemoteConnect and SCADAPack x70 logic projects."""
 
-__version__ = "0.19.0"
+__version__ = "0.20.0rc1"

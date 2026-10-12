@@ -45,13 +45,13 @@ class LogicArchiveTests(unittest.TestCase):
                 first = prepare_sta(str(archive), str(xpdf))
                 Path(first["materialized_stu"]).parent.mkdir(parents=True)
                 Path(first["materialized_stu"]).write_bytes(b"stu")
-                record_materialized_stu(first["materialized_stu"])
+                record_materialized_stu(first["materialized_stu"], first["pristine_cache_stu"])
                 second = prepare_sta(str(archive), str(xpdf))
             self.assertTrue(second["cached"])
             self.assertNotIn("apx", second)
             self.assertNotIn("apd", second)
 
-    def test_edited_materialization_is_not_reused(self):
+    def test_edited_working_materialization_is_preserved_and_not_reused(self):
         with tempfile.TemporaryDirectory() as directory:
             archive, xpdf = self._files(directory)
             with zipfile.ZipFile(archive, "w") as bundle:
@@ -62,12 +62,13 @@ class LogicArchiveTests(unittest.TestCase):
                 materialized = Path(first["materialized_stu"])
                 materialized.parent.mkdir(parents=True)
                 materialized.write_bytes(b"pristine")
-                record_materialized_stu(str(materialized))
+                record_materialized_stu(str(materialized), first["pristine_cache_stu"])
                 materialized.write_bytes(b"edited")
                 second = prepare_sta(str(archive), str(xpdf))
-            self.assertFalse(second["cached"])
-            self.assertFalse(materialized.exists())
-            self.assertEqual(second["apx"], b"apx")
+            self.assertTrue(second["cached"])
+            self.assertEqual(materialized.read_bytes(), b"edited")
+            self.assertNotEqual(second["materialized_stu"], str(materialized))
+            self.assertEqual(Path(second["materialized_stu"]).read_bytes(), b"pristine")
 
     def test_missing_payload_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

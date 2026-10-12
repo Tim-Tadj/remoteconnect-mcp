@@ -15,11 +15,14 @@ from __future__ import annotations
 
 import atexit
 import logging
+import math
 import os
+import queue
 import re
 import tempfile
+import threading
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from typing import Any, Callable
 
 from . import constants as C
@@ -76,7 +79,7 @@ def _format_com_error(exc: Exception) -> str:
             if excepinfo and len(excepinfo) > 2 and excepinfo[2]:
                 detail = str(excepinfo[2]).strip()
             parts = [p for p in (detail, text) if p]
-            msg = " — ".join(parts) if parts else "COM error"
+            msg = " - ".join(parts) if parts else "COM error"
             return f"{msg} (HRESULT 0x{hresult & 0xFFFFFFFF:08X})" if hresult is not None else msg
     except Exception:
         pass
@@ -125,17 +128,103 @@ def _iter_collection(coll):
         yield coll.Item(i)
 
 
+class _COMWorker:
+    """One daemon apartment, with balanced COM lifetime on its own thread.
+
+    Python cannot interrupt a vendor COM call safely. A daemon worker prevents
+    a permanently blocked call from also blocking interpreter shutdown.
+    """
+
+    def __init__(self, initialise: Callable, finalise: Callable) -> None:
+        self._initialise = initialise
+        self._finalise = finalise
+        self._queue: queue.Queue = queue.Queue()
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        self._closed = False
+        self._initialisation_error: str | None = None
+        self.thread_id: int | None = None
+
+    def submit(self, fn: Callable, *args, **kwargs) -> Future:
+        future: Future = Future()
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("The COM worker has shut down.")
+            if self._initialisation_error is not None:
+                raise CEError(self._initialisation_error)
+            self._queue.put((future, fn, args, kwargs))
+            if self._thread is None:
+                self._thread = threading.Thread(
+                    target=self._work, name=f"ce-com-{id(self):x}", daemon=True
+                )
+                self._thread.start()
+        return future
+
+    def _work(self) -> None:
+        self.thread_id = threading.get_ident()
+        initialised = False
+        try:
+            try:
+                self._initialise()
+                initialised = True
+            except Exception as exc:
+                self._initialisation_error = _format_com_error(exc)
+            while True:
+                item = self._queue.get()
+                if item is None:
+                    break
+                future, fn, args, kwargs = item
+                if not future.set_running_or_notify_cancel():
+                    continue
+                if self._initialisation_error is not None:
+                    future.set_exception(CEError(self._initialisation_error))
+                    continue
+                try:
+                    future.set_result(fn(*args, **kwargs))
+                except BaseException as exc:
+                    # Public calls use _invoke, which removes vendor traceback
+                    # frames inside this apartment before returning an error.
+                    future.set_exception(exc)
+                finally:
+                    del item, fn, args, kwargs, future
+        finally:
+            try:
+                if initialised:
+                    self._finalise()
+            except Exception as exc:
+                log.warning("COM apartment finalisation failed: %s", _format_com_error(exc))
+            finally:
+                self.thread_id = None
+
+    def shutdown(self, wait: bool = False) -> None:
+        with self._lock:
+            if not self._closed:
+                self._closed = True
+                self._queue.put(None)
+            worker = self._thread
+        if wait and worker is not None and worker.ident != threading.get_ident():
+            worker.join()
+
+
 class ControlExpertBridge:
     """Owns the COM worker thread and the current application session."""
 
-    def __init__(self) -> None:
-        self._executor = ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="ce-com", initializer=self._init_com
+    def __init__(self, *, operation_timeout: float | None = None) -> None:
+        self._operation_timeout = float(
+            operation_timeout if operation_timeout is not None
+            else os.environ.get("CE_MCP_COM_TIMEOUT_SECONDS", "120")
         )
+        if not math.isfinite(self._operation_timeout) or self._operation_timeout <= 0:
+            raise ValueError("CE_MCP_COM_TIMEOUT_SECONDS must be a positive finite number.")
+        self._state_lock = threading.Lock()
+        self._poisoned: str | None = None
+        self._shutdown = False
+        self._executor = _COMWorker(self._init_com, self._uninit_com)
         self._app: Any = None
         self._proj: Any = None  # cached write-token project dispatch
         self._project_path: str | None = None
         self._needs_saveas: bool = False
+        self._recovery_archives: set[str] = set()
         atexit.register(self.shutdown)
 
     # ------------------------------------------------------------------ infra
@@ -146,15 +235,52 @@ class ControlExpertBridge:
 
         pythoncom.CoInitialize()
 
-    def _run(self, fn: Callable, *args, **kwargs):
-        import threading
+    def _uninit_com(self) -> None:
+        import pythoncom
 
-        # Reentrant: when already on the COM worker thread, call directly —
-        # submitting to the single-worker executor from itself would deadlock.
-        if threading.current_thread().name.startswith("ce-com"):
-            return fn(*args, **kwargs)
+        # Dispatch references must also be released on their owning apartment.
+        self._proj = None
+        self._app = None
+        pythoncom.CoUninitialize()
+
+    def _invoke(self, fn: Callable, args: tuple, kwargs: dict) -> tuple[bool, Any]:
+        with self._state_lock:
+            if self._poisoned:
+                return False, self._poisoned
         try:
-            return self._executor.submit(fn, *args, **kwargs).result()
+            return True, fn(*args, **kwargs)
+        except Exception as exc:
+            # Do not pass an exception with COM-bearing traceback frames to the
+            # caller's thread. Only plain error text crosses the apartment.
+            return False, _format_com_error(exc)
+
+    def _run(self, fn: Callable, *args, **kwargs):
+        # Reentrant: when already on this instance's COM worker, call directly.
+        # submitting to the single-worker executor from itself would deadlock.
+        if threading.get_ident() == self._executor.thread_id:
+            return fn(*args, **kwargs)
+        with self._state_lock:
+            if self._shutdown:
+                raise CEError("The COM bridge has shut down. Start a new bridge session.")
+            if self._poisoned:
+                raise CEError(self._poisoned)
+            future = self._executor.submit(self._invoke, fn, args, kwargs)
+        try:
+            success, result = future.result(timeout=self._operation_timeout)
+            if not success:
+                raise CEError(result)
+            return result
+        except FutureTimeoutError:
+            message = (
+                f"COM operation exceeded {self._operation_timeout:g} seconds. "
+                "It may still be running and its outcome is unknown. This bridge "
+                "is disabled; inspect the project and restart the MCP server before "
+                "retrying. No further operations will be queued."
+            )
+            with self._state_lock:
+                self._poisoned = message
+            future.cancel()
+            raise CEError(message) from None
         except CEError:
             raise
         except Exception as exc:  # noqa: BLE001 — re-raise as readable error
@@ -165,11 +291,43 @@ class ControlExpertBridge:
             raise CEError(msg) from None
 
     def shutdown(self) -> None:
+        with self._state_lock:
+            if self._shutdown:
+                return
+            self._shutdown = True
+            poisoned = self._poisoned is not None
         try:
-            self._executor.submit(self._do_close, False).result(timeout=30)
-        except Exception:
-            pass
+            if not poisoned and self._executor.thread_id is not None:
+                if threading.get_ident() == self._executor.thread_id:
+                    self._do_shutdown()
+                else:
+                    self._executor.submit(self._do_shutdown).result(timeout=5)
+        except Exception as exc:
+            log.warning("COM shutdown could not finish safely: %s", _format_com_error(exc))
         self._executor.shutdown(wait=False)
+        atexit.unregister(self.shutdown)
+
+    def _do_shutdown(self) -> None:
+        if self._app is None:
+            return
+        try:
+            proj = self._project(write=False)
+            modified = bool(proj.IsModified())
+            del proj
+        except Exception as exc:
+            log.warning("Project state unknown; shutdown will not call ProjectClose: %s", exc)
+            return
+        if modified:
+            log.warning("Unsaved changes exist; shutdown will not call ProjectClose. Explicitly save or close the project before stopping the server.")
+            return
+        self._do_close(False)
+
+    def _require_no_application(self) -> None:
+        if self._app is not None:
+            raise CEError(
+                "An application is already open. Save it if needed, then explicitly "
+                "call close_project before opening or creating another project."
+            )
 
     # ------------------------------------------------------- session handling
 
@@ -240,7 +398,7 @@ class ControlExpertBridge:
         return result
 
     def _project(self, write: bool = True):
-        """Get the IProject dispatch (cached for the whole session).
+        """Get a read token, or the session's cached write-token dispatch.
 
         'Project' is a parameterized property (write-access token argument),
         which pywin32 dynamic dispatch cannot call directly — invoke
@@ -257,24 +415,26 @@ class ControlExpertBridge:
         ole = app._oleobj_
         dispid = ole.GetIDsOfNames(0, "Project")
         try:
-            disp = ole.Invoke(dispid, 0, pythoncom.DISPATCH_PROPERTYGET, 1, 1)
+            disp = ole.Invoke(dispid, 0, pythoncom.DISPATCH_PROPERTYGET, 1, int(write))
         except Exception as exc:
             msg = _format_com_error(exc)
             del exc
             if not write:
-                # Read-only fallback: token 0 works while another client
-                # (e.g. an interactive Control Expert) owns the write token.
-                disp = ole.Invoke(dispid, 0, pythoncom.DISPATCH_PROPERTYGET, 1, 0)
-                return win32com.client.Dispatch(disp)
+                raise CEError(f"Could not get project read access: {msg}") from None
             raise CEError(
                 f"Could not get project write access: {msg}. If Control Expert (or "
                 "another automation client) has the project open in write mode, close "
                 "it there first. Read-only tools still work."
             ) from None
+        if not write:
+            return win32com.client.Dispatch(disp)
         self._proj = win32com.client.Dispatch(disp)
         return self._proj
 
     def _temp_path(self, suffix: str) -> str:
+        # DTM aliases appear in some suffixes. Keep them inside one filename,
+        # even if a project contains slashes or other path syntax in an alias.
+        suffix = re.sub(r"[^A-Za-z0-9_.-]", "_", suffix)[-96:]
         d = os.path.join(tempfile.gettempdir(), "control-expert-mcp")
         os.makedirs(d, exist_ok=True)
         return os.path.join(d, f"{uuid.uuid4().hex}{suffix}")
@@ -293,6 +453,9 @@ class ControlExpertBridge:
     # ----------------------------------------------------------- public: app
 
     def get_status(self) -> dict:
+        with self._state_lock:
+            if self._poisoned:
+                return {"session": "unavailable", "worker": "poisoned", "error": self._poisoned}
         return self._run(self._do_get_status)
 
     def _do_get_status(self) -> dict:
@@ -355,7 +518,12 @@ class ControlExpertBridge:
         if not os.path.isfile(path):
             raise CEError(f"File not found: {path}")
         ext = os.path.splitext(path)[1].lower()
-        self._do_close(False)
+        self._require_no_application()
+        if ext not in (".stu", ".sta", ".xef", ".zef"):
+            raise CEError(
+                f"Unsupported project file extension '{ext}'. "
+                "Use .stu/.sta (native) or .xef/.zef (XML exchange)."
+            )
         self._needs_saveas = False
         broker = self._broker()
         archive_info = None
@@ -392,7 +560,7 @@ class ControlExpertBridge:
                     self._project(write=True).SaveAs(open_path)
                     if not os.path.isfile(open_path):
                         raise CEError("UDE SaveAs returned without creating the materialized .STU")
-                    record_materialized_stu(open_path)
+                    record_materialized_stu(open_path, archive_info["pristine_cache_stu"])
                 except Exception:
                     try:
                         os.remove(open_path)
@@ -430,7 +598,7 @@ class ControlExpertBridge:
                 "cpu_version is required and must match the firmware version offered by "
                 "the hardware catalog for this CPU, e.g. '02.70' for 'BMX P34 2020'."
             )
-        self._do_close(False)
+        self._require_no_application()
         broker = self._broker()
         self._app = self._new_native_application(broker)
         try:
@@ -469,9 +637,8 @@ class ControlExpertBridge:
 
     def _do_new_logic_editor_project(self, platform, xpdf_context,
                                      settings_xso) -> dict:
+        self._require_no_application()
         import win32com.client
-
-        self._do_close(False)
         broker = self._broker()
         if not os.path.isfile(xpdf_context):
             raise CEError(f"SCADAPack XPDF context file not found: {xpdf_context}")
@@ -569,10 +736,14 @@ class ControlExpertBridge:
             gc.collect()
             try:
                 self._app.ProjectClose()
-            except Exception:
-                pass
+            except Exception as exc:
+                raise CEError(
+                    "ProjectClose failed; the application remains tracked and cannot "
+                    f"be replaced: {_format_com_error(exc)}"
+                ) from None
             self._app = None
             self._project_path = None
+            self._needs_saveas = False
             gc.collect()
 
     # --------------------------------------------------------- public: build
@@ -1742,8 +1913,8 @@ class ControlExpertBridge:
 
     # --------------------------------------------------------------- hardware
 
-    def _buses(self):
-        proj = self._project(write=True)
+    def _buses(self, write: bool = True):
+        proj = self._project(write=write)
         conf2 = self._qi(proj.Configuration, "IConfiguration2")
         return self._wrap(self._get_prop(conf2, "InternalBuses"))
 
@@ -1765,7 +1936,7 @@ class ControlExpertBridge:
         return self._run(self._do_get_hardware)
 
     def _do_get_hardware(self) -> dict:
-        proj = self._project(write=True)
+        proj = self._project(write=False)
         out: dict[str, Any] = {}
         try:
             cpu = proj.Configuration.Cpu
@@ -1778,7 +1949,7 @@ class ControlExpertBridge:
         except Exception:
             pass
         buses_out = []
-        for bus in self._iter_qi(self._buses(), "IBus"):
+        for bus in self._iter_qi(self._buses(write=False), "IBus"):
             bus_info = self._hw_info(bus)
             drops_out = []
             try:
@@ -2023,8 +2194,8 @@ class ControlExpertBridge:
 
     # -------------------------------------------------------------------- DTM
 
-    def _dtm_root(self):
-        proj3 = self._qi(self._project(write=True), "IProject3")
+    def _dtm_root(self, write: bool = True):
+        proj3 = self._qi(self._project(write=write), "IProject3")
         return self._qi(self._wrap(self._get_prop(proj3, "DTMRoot")), "IPServerDtmRoot")
 
     def _iter_dtm_coll(self, coll):
@@ -2061,15 +2232,15 @@ class ControlExpertBridge:
         return self._run(self._do_list_dtms)
 
     def _do_list_dtms(self) -> dict:
-        root = self._dtm_root()
+        root = self._dtm_root(write=False)
         coll = self._qi(self._wrap(root.Dtms()), "IPServerDtms")
         out = [self._dtm_info(d) for d in self._iter_dtm_coll(coll)]
         return {"dtms": out}
 
-    def _find_dtm(self, name: str):
+    def _find_dtm(self, name: str, write: bool = True):
         import pythoncom
 
-        root = self._dtm_root()
+        root = self._dtm_root(write=write)
         try:
             found = self._invoke_out(root, "GetDtmFromName", (name,), (pythoncom.VT_DISPATCH,))
             if found is not None:
@@ -2283,7 +2454,7 @@ class ControlExpertBridge:
     def _do_get_dtm_control(self, name: str) -> dict:
         import pythoncom
 
-        dtm = self._find_dtm(name)
+        dtm = self._find_dtm(name, write=False)
         xml, app_ok = self._invoke_out(
             dtm, "GetControlParameter", (), (pythoncom.VT_BSTR, pythoncom.VT_BOOL)
         )
@@ -2322,7 +2493,7 @@ class ControlExpertBridge:
     def _do_get_dtm_dataset(self, name: str) -> dict:
         import pythoncom
 
-        dtm = self._find_dtm(name)
+        dtm = self._find_dtm(name, write=False)
         data = self._invoke_out(dtm, "ExportConfiguration", (), (pythoncom.VT_VARIANT,))
         raw = bytes(bytearray(data)) if not isinstance(data, (bytes, bytearray)) else bytes(data)
         text = None
@@ -2509,7 +2680,7 @@ class ControlExpertBridge:
 
     def _do_get_master_dataset(self, dtm_label: str | None) -> dict:
         zef = self._temp_path(".zef")
-        proj = self._project(write=True)
+        proj = self._project(write=False)
         try:
             proj.Export(zef, C.EXPORT_PROJECT_FULL)
             bin_name, text, _enc = self._zef_locate_dataset(zef, dtm_label)
@@ -2569,10 +2740,11 @@ class ControlExpertBridge:
             }
         finally:
             for p in (zef, new_zef):
-                try:
-                    os.remove(p)
-                except OSError:
-                    pass
+                if p not in self._recovery_archives:
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
 
     # ------------------------------------------ CPU Ethernet / security cfg
 
@@ -2636,26 +2808,31 @@ class ControlExpertBridge:
         raise CEError(f"{section} section not found in the DTM PrmCfg container.")
 
     def _reimport_zef(self, new_zef: str, orig_zef: str, orig_path, fail_hint: str) -> None:
-        """Close the live project and reimport new_zef. Closing is destructive,
-        so if the modified archive is rejected, roll back by reimporting the
-        untouched orig_zef — the caller is NEVER left without an open project —
-        then raise CEError(fail_hint.format(error=...)). On success the caller
-        sets _project_path as it sees fit."""
-        self._do_close(False)
+        """Reload an edited export, attempting rollback and retaining recovery
+        files if the vendor rejects both versions. Report restoration only
+        after it actually succeeds."""
         broker = self._broker()
-        self._app = broker.NewApplication()
+        self._do_close(False)
         try:
+            self._app = self._new_native_application(broker)
             self._app.ImportProject(new_zef)
         except Exception as exc:
             msg = _format_com_error(exc)
             del exc
             try:
-                self._app = broker.NewApplication()
+                self._do_close(False)
+                self._app = self._new_native_application(broker)
                 self._app.ImportProject(orig_zef)
                 self._project_path = orig_path
                 self._needs_saveas = orig_path is not None
-            except Exception:
-                pass
+            except Exception as recovery_exc:
+                self._recovery_archives.update((orig_zef, new_zef))
+                raise CEError(
+                    f"Project reload failed ({msg}) and restoring the original export "
+                    f"also failed ({_format_com_error(recovery_exc)}). The project has "
+                    "not been restored. Recovery exports have been preserved at "
+                    f"{orig_zef} and {new_zef}. Inspect the application before proceeding."
+                ) from None
             raise CEError(fail_hint.format(error=msg)) from None
 
     def _do_zef_patch(self, patchers: dict) -> dict:
@@ -2697,10 +2874,11 @@ class ControlExpertBridge:
             return {"patched_entries": patched, "reloaded": True}
         finally:
             for p in (zef, new_zef):
-                try:
-                    os.remove(p)
-                except OSError:
-                    pass
+                if p not in self._recovery_archives:
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
 
     def configure_cpu_ethernet(
         self,

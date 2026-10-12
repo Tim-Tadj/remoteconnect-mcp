@@ -6,6 +6,8 @@ import os
 import re
 from pathlib import Path
 
+from .atomic_file import ensure_separate_output, staged_output
+
 
 class BulkEditError(ValueError):
     pass
@@ -865,7 +867,7 @@ def configuration_semantics(path: str) -> dict[str, set[tuple]]:
         for row in range(1, project_settings_sheet.nrows)
         if project_settings_sheet.cell_value(row, 0) != ""
     }
-    return {
+    semantics = {
         "project_settings": project_settings,
         "objects": enabled_objects,
         "browser_lists": {(row.get("Name"),) for row in rows["(21) Browser Lists"]},
@@ -939,20 +941,91 @@ def configuration_semantics(path: str) -> dict[str, set[tuple]]:
             if row.get("DataLoggingLogFileName", "") != ""
         },
     }
+    # The original relationship summary covers only a subset of the importable
+    # columns. Include every table field so changed IP addresses, comments,
+    # scaling, scan rates, DNP3 settings and firewall rules cannot pass unseen.
+    scanner_identity = {
+        row.get("ScannerSequenceId"): (
+            modbus_devices.get(row.get("DeviceSequenceId")),
+            row.get("RegisterStartAddr"), row.get("RegisterQuantity"),
+            row.get("Operation"), row.get("ModbusDataType"), row.get("ObjectType"),
+        ) for row in rows["(10) Modbus Scanners"]
+    }
+    point_identity = {
+        row.get("RemotePointSequenceId"): (
+            dnp_devices.get(row.get("RemoteDeviceId")), row.get("RemotePointType"),
+            row.get("RemotePointNumber"), row.get("LocalPointQuantity"),
+        ) for row in rows["(6) DNP3 Controlling Station Po"]
+    }
+    for sheet in book.sheets():
+        if sheet.name.startswith("(0) Export Settings"):
+            continue  # Import controls and exporter metadata are not device settings.
+        if sheet.name.startswith(("(1) Project Settings", "(19) Parameters")):
+            semantics["values:" + sheet.name] = {
+                (("Id", _normalize(sheet.cell_value(row, 0))),
+                 ("Value", _normalize(sheet.cell_value(row, 2))))
+                for row in range(1, sheet.nrows) if sheet.cell_value(row, 0) != ""
+            }
+            continue
+        fields = [str(sheet.cell_value(1, col)) for col in range(sheet.ncols)]
+        values = set()
+        for index in range(2, sheet.nrows):
+            row = {field: _normalize(sheet.cell_value(index, col))
+                   for col, field in enumerate(fields) if field}
+            if "EnableImport" in row and not str(row["EnableImport"]).startswith("On"):
+                continue
+            primary_fields = set()
+            if sheet.name.startswith("(2) Objects"):
+                primary_fields = {"ObjSequenceId", "EnableImport"}
+            elif sheet.name.startswith(("(5) DNP3 Controlling Station De", "(9) Modbus Server Devices")):
+                primary_fields = {"DeviceSequenceId"}
+            elif sheet.name.startswith("(6) DNP3 Controlling Station Po"):
+                primary_fields = {"RemotePointSequenceId"}
+            elif sheet.name.startswith("(10) Modbus Scanners"):
+                primary_fields = {"ScannerSequenceId"}
+            elif sheet.name.startswith("(21) Browser Lists"):
+                primary_fields = {"BrowserReferenceId"}
+            canonical = []
+            for field, value in row.items():
+                if field in primary_fields:
+                    continue
+                if value != "":
+                    if field == "ObjSequenceId":
+                        value = objects.get(value, ("unresolved", value))
+                    elif field == "BrowserReferenceId":
+                        value = browser_lists.get(value, ("unresolved", value))
+                    elif field == "PointScannerSequenceId":
+                        value = scanner_identity.get(value, ("unresolved", value))
+                    elif field == "PointSequenceId":
+                        value = point_identity.get(value, ("unresolved", value))
+                    elif field == "RemoteDeviceId":
+                        value = dnp_devices.get(value, ("unresolved", value))
+                    elif field == "DeviceSequenceId":
+                        mapping = dnp_devices if sheet.name.startswith("(11)") else modbus_devices
+                        value = mapping.get(value, ("unresolved", value))
+                canonical.append((field, value))
+            values.add(tuple(sorted(canonical)))
+        semantics["values:" + sheet.name] = values
+    return semantics
 
 
 def compare_configuration_semantics(expected_path: str, actual_path: str, *, max_missing: int = 200) -> dict:
+    if max_missing < 1:
+        raise BulkEditError("max_missing must be at least 1")
     expected = configuration_semantics(expected_path)
     actual = configuration_semantics(actual_path)
     missing = []
+    missing_total = 0
     counts = {}
     for category, expected_items in expected.items():
         absent = expected_items - actual[category]
+        missing_total += len(absent)
         counts[category] = {"expected": len(expected_items), "actual": len(actual[category]), "missing": len(absent)}
         for identity in sorted(absent, key=repr):
             if len(missing) < max_missing:
                 missing.append({"category": category, "identity": list(identity)})
-    return {"ok": not missing, "counts": counts, "missing": missing, "missing_truncated": len(missing) >= max_missing}
+    return {"ok": missing_total == 0, "counts": counts, "missing": missing,
+            "missing_total": missing_total, "missing_truncated": missing_total > len(missing)}
 
 
 def compare_configuration_delta(
@@ -961,40 +1034,57 @@ def compare_configuration_delta(
     actual_path: str,
     *,
     max_missing: int = 200,
+    check_removals: bool = True,
 ) -> dict:
-    """Verify that entities newly requested by an import survive native re-export.
+    """Verify every changed configuration row survives native re-export.
 
     A bulk-edit workbook can contain legacy rows which RemoteConnect already omits
     from its own exports. Comparing the whole workbook therefore produces false
     failures.  This comparison treats the source project's native export as the
     baseline and checks every requested addition against the post-import export.
     """
+    if max_missing < 1:
+        raise BulkEditError("max_missing must be at least 1")
     before = configuration_semantics(before_path)
     requested = configuration_semantics(requested_path)
     actual = configuration_semantics(actual_path)
     missing: list[dict] = []
     missing_total = 0
+    unexpected: list[dict] = []
+    unexpected_total = 0
     counts = {}
     for category, requested_items in requested.items():
         additions = requested_items - before[category]
         absent = additions - actual[category]
         missing_total += len(absent)
+        # Check requested removals as well. Unchanged legacy rows omitted by
+        # native export remain allowed; only the caller's delta is enforced.
+        remaining = (before[category] - requested_items) & actual[category] if check_removals else set()
+        unexpected_total += len(remaining)
         counts[category] = {
             "before": len(before[category]),
             "requested": len(requested_items),
             "requested_additions": len(additions),
             "actual": len(actual[category]),
             "missing_additions": len(absent),
+            "unapplied_removals": len(remaining),
         }
         for identity in sorted(absent, key=repr):
             if len(missing) < max_missing:
                 missing.append({"category": category, "identity": list(identity)})
+        for identity in sorted(remaining, key=repr):
+            if len(unexpected) < max_missing:
+                unexpected.append({"category": category, "identity": list(identity)})
     return {
-        "ok": missing_total == 0,
+        "ok": missing_total == 0 and unexpected_total == 0,
         "counts": counts,
         "missing": missing,
         "missing_total": missing_total,
         "missing_truncated": missing_total > len(missing),
+        "unapplied_removals": unexpected,
+        "unapplied_removal_total": unexpected_total,
+        "unapplied_removals_truncated": unexpected_total > len(unexpected),
+        "removals_checked": check_removals,
     }
 
 
@@ -1012,8 +1102,10 @@ def create_workbook_copy(
     output = Path(output_path).expanduser().resolve()
     if output.suffix.lower() != ".xls":
         raise BulkEditError("output_path must end in .xls")
-    if output == source:
-        raise BulkEditError("output_path must differ from template_path")
+    try:
+        ensure_separate_output(output, source)
+    except ValueError as exc:
+        raise BulkEditError(str(exc)) from exc
     if output.exists() and not overwrite:
         raise BulkEditError(f"Output exists (set overwrite=true to replace it): {output}")
     if not patches and not additions and not project_settings:
@@ -1168,13 +1260,13 @@ def create_workbook_copy(
             "blank_row": source_row is None,
             "values": values,
         })
-    output.parent.mkdir(parents=True, exist_ok=True)
-    writable.save(str(output))
-    # Reopen the produced file and verify the RemoteConnect header contract.
-    verified = inspect_workbook(str(output), limit=0)
-    version = str(verified["metadata"].get("ExportFileVersion", ""))
-    if not re.fullmatch(r"v\d+\.\d+", version):
-        raise BulkEditError(f"Generated workbook has invalid ExportFileVersion: {version!r}")
+    with staged_output(output, overwrite=overwrite) as candidate:
+        writable.save(str(candidate))
+        # Validate before any existing destination can be replaced.
+        verified = inspect_workbook(str(candidate), limit=0)
+        version = str(verified["metadata"].get("ExportFileVersion", ""))
+        if not re.fullmatch(r"v\d+\.\d+", version):
+            raise BulkEditError(f"Generated workbook has invalid ExportFileVersion: {version!r}")
     return {
         "template": str(source),
         "output": str(output),

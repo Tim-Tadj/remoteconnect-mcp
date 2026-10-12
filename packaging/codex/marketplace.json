@@ -1,0 +1,21 @@
+{
+  "name": "remoteconnect-local",
+  "interface": {
+    "displayName": "RemoteConnect Local"
+  },
+  "plugins": [
+    {
+      "name": "remoteconnect-mcp",
+      "version": "__VERSION__",
+      "source": {
+        "source": "local",
+        "path": "./codex-plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

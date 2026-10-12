@@ -1,0 +1,14 @@
+{
+  "name": "remoteconnect-local",
+  "description": "Local Windows RemoteConnect MCP build",
+  "owner": {
+    "name": "Tim-Tadj"
+  },
+  "plugins": [
+    {
+      "name": "remoteconnect-mcp",
+      "source": "./claude-plugin",
+      "description": "Offline project inspection and editing on disposable copies"
+    }
+  ]
+}

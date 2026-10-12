@@ -1,0 +1,22 @@
+# Merge into your Codex config; replace the example paths before use.
+[mcp_servers.remoteconnect]
+command = 'C:\path\to\remoteconnect-mcp\.venv\Scripts\python.exe'
+args = ['-m', 'remoteconnect_mcp']
+startup_timeout_sec = 30
+tool_timeout_sec = 600
+default_tools_approval_mode = "writes"
+# Optional narrow workflow; remove tools you do not need.
+# enabled_tools = ["get_status", "inspect_remoteconnect_project", "open_remoteconnect_logic", "get_project_structure", "read_st_source"]
+
+[mcp_servers.remoteconnect.env]
+CE_MCP_TOOL_PROFILE = "offline"
+CE_MCP_ENABLE_ONLINE = "0"
+CE_MCP_READ_ROOTS = 'D:\RemoteConnect-MCP-Work'
+CE_MCP_WRITE_ROOTS = 'D:\RemoteConnect-MCP-Work'
+CE_MCP_XPDF_CONTEXT = 'C:\ProgramData\Schneider Electric\CommonControlExpert\16.2\Xpdf\SCBForSCADAPack.xpdf'
+# Uncomment and adjust for a non-default native installation.
+# REMOTECONNECT_HOME = 'D:\Program Files\RemoteConnect'
+
+# Keep large audit output bounded in the client.
+[mcp_servers.remoteconnect.tools.audit_remoteconnect_project]
+output_token_limit = 8000

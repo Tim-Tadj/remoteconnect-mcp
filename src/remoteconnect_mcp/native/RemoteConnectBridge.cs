@@ -26,12 +26,12 @@ internal sealed class HeadlessEnvironment : IEnvironment
         UserSettingsPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Schneider Electric", "RemoteConnect");
-        temporaryFilesPath = Path.Combine(Path.GetTempPath(), "remoteconnect-mcp");
+        temporaryFilesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "runtime-temp");
         Directory.CreateDirectory(temporaryFilesPath);
     }
 
     public string ApplicationName { get { return "RemoteConnect MCP"; } }
-    public string ApplicationVersion { get { return "0.19.0"; } }
+    public string ApplicationVersion { get { return "0.20.0rc1"; } }
     public string ApplicationManufacturer { get { return "Schneider Electric"; } }
     public string BaseDirectory { get; private set; }
     public string CommonApplicationDataPath { get; private set; }
@@ -85,6 +85,8 @@ internal static class RemoteConnectBridge
     private static Assembly Resolve(object sender, ResolveEventArgs args)
     {
         string name = new AssemblyName(args.Name).Name + ".dll";
+        if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || Path.GetFileName(name) != name)
+            return null;
         foreach (string dir in new[] { Module, Install, Path.Combine(Install, "CBS", "FDTDTM"), X70Dtm })
         {
             string path = Path.Combine(dir, name);
@@ -187,7 +189,7 @@ internal static class RemoteConnectBridge
         Console.WriteLine("exported=" + outputPath + "\tbytes=" + new FileInfo(outputPath).Length);
     }
 
-    private static void ImportWorkbook(IFDT2DTMProxy proxy, string inputPath)
+    private static bool ImportWorkbook(IFDT2DTMProxy proxy, string inputPath)
     {
         object deviceModel = GetDeviceModel(proxy);
         Type excelType;
@@ -203,17 +205,23 @@ internal static class RemoteConnectBridge
                 "Parse", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
                 .Invoke(excel, invokeArguments);
         }
-        proxy.Save();
         Console.WriteLine("imported=" + imported + "\tcanceled=" + invokeArguments[4] +
             "\tworkbook=" + inputPath + "\tlog=" + logPath +
             "\tlog_bytes=" + new FileInfo(logPath).Length);
-        if (!imported) throw new InvalidDataException("The x70 DTM rejected the workbook. See " + logPath);
+        if (!imported || (bool)invokeArguments[4])
+        {
+            Console.Error.WriteLine("The x70 DTM rejected or cancelled the workbook. See " + logPath);
+            return false;
+        }
+        proxy.Save();
+        return true;
     }
 
     public static int Main(string[] args)
     {
         bool creating = args.Length == 3 && args[1] == "--create";
         if ((args.Length != 1 && args.Length != 3) ||
+            (args.Length == 3 && args[1] != "--create" && args[1] != "--export" && args[1] != "--import") ||
             (!creating && !File.Exists(args[0])) ||
             (creating && File.Exists(args[0])))
         {
@@ -254,13 +262,17 @@ internal static class RemoteConnectBridge
             string assemblyLocation = external.GetAssemblyLocation();
             string serviceDirectory = external.GetDirectoryName(assemblyLocation);
             string installedConfig = Path.Combine(Install, @"CBS\FDTDTM\RuntimeFrame.dll.config");
+            // Keep generated runtime settings beside the private helper, never
+            // inside the installed Schneider framework directory.
+            // FdtContainerService concatenates its entry-assembly directory and
+            // this argument as strings, so it requires a relative file name.
             string runtimeConfig = "remoteconnect-mcp.RuntimeFrame.config";
-            string localConfig = Path.Combine(serviceDirectory, runtimeConfig);
+            string privateConfig = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, runtimeConfig);
             string configText = File.ReadAllText(installedConfig).Replace(
                 @".\CBS\FDTDTM\FDT XML Schemas",
                 Path.Combine(Install, @"CBS\FDTDTM\FDT XML Schemas"));
-            File.WriteAllText(localConfig, configText);
-            string resolvedConfig = serviceDirectory + @"\" + runtimeConfig;
+            File.WriteAllText(privateConfig, configText);
+            string resolvedConfig = Path.Combine(serviceDirectory, runtimeConfig);
             Console.Error.WriteLine("assembly_location=" + assemblyLocation);
             Console.Error.WriteLine("runtime_config=" + resolvedConfig + " exists=" + external.FileExists(resolvedConfig));
             using (FdtContainerService container = new FdtContainerService(catalog, log, runtimeConfig, external))
@@ -316,6 +328,12 @@ internal static class RemoteConnectBridge
                     Console.WriteLine("opened=" + projectPath);
                 }
                 Console.WriteLine("dtm_count=" + project.DTMs.Count());
+                int targetCount = 0;
+                foreach (IDTMListItem item in project.DTMs)
+                    if (String.Equals(item.DTMTypeInfo.Name, "SCADAPack x70", StringComparison.OrdinalIgnoreCase))
+                        targetCount++;
+                if (operation != "--create" && !String.IsNullOrEmpty(operation) && targetCount != 1)
+                    throw new InvalidOperationException("Configuration operations require exactly one SCADAPack x70 DTM; found " + targetCount);
                 foreach (IDTMListItem item in project.DTMs)
                 {
                     Fdt2TypeInfoProvider fdt2 = item.DTMTypeInfo as Fdt2TypeInfoProvider;
@@ -333,7 +351,15 @@ internal static class RemoteConnectBridge
                         else if (operation == "--export")
                             ExportWorkbook((IFDT2DTMProxy)proxy, Path.GetFullPath(workbookPath));
                         else if (operation == "--import")
-                            ImportWorkbook((IFDT2DTMProxy)proxy, Path.GetFullPath(workbookPath));
+                        {
+                            if (!ImportWorkbook((IFDT2DTMProxy)proxy, Path.GetFullPath(workbookPath)))
+                            {
+                                project.DisposeRequest(false);
+                                fileAdapter.Close(projectName);
+                                dtmCatalog.Dispose();
+                                return 3;
+                            }
+                        }
                         else if (operation != "--create")
                             throw new ArgumentException("Unknown operation: " + operation);
                     }

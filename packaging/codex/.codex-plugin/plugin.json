@@ -1,0 +1,26 @@
+{
+  "name": "remoteconnect-mcp",
+  "version": "__VERSION__",
+  "description": "Local Windows MCP server for RemoteConnect x70 inspection and disposable-copy editing.",
+  "author": {
+    "name": "Tim-Tadj and RemoteConnect MCP contributors"
+  },
+  "homepage": "https://github.com/Tim-Tadj/remoteconnect-mcp",
+  "repository": "https://github.com/Tim-Tadj/remoteconnect-mcp",
+  "license": "MIT",
+  "keywords": ["mcp", "remoteconnect", "scadapack", "windows"],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "RemoteConnect MCP",
+    "shortDescription": "Inspect and edit x70 copies",
+    "longDescription": "Inspect RemoteConnect project bundles and edit disposable copies on a native Windows engineering workstation. Requires the separately installed, licensed Schneider runtime. The offline profile excludes equipment operations.",
+    "developerName": "Tim-Tadj",
+    "category": "Developer Tools",
+    "capabilities": ["Inspect project copies", "Edit project copies"],
+    "websiteURL": "https://github.com/Tim-Tadj/remoteconnect-mcp",
+    "defaultPrompt": ["Inspect a disposable RemoteConnect project copy and report its logic sections."],
+    "brandColor": "#216C54",
+    "composerIcon": "./assets/icon.svg",
+    "logo": "./assets/icon.svg"
+  }
+}

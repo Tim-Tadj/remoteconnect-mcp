@@ -19,6 +19,10 @@ from __future__ import annotations
 import functools
 import glob
 import os
+from pathlib import Path
+from urllib.parse import unquote, urlparse
+
+from .xml_safe import parse_xml_bytes, xml_parser
 
 # Exchange-file root element -> top-level XSD (these pull in the rest via include)
 ROOT_TO_XSD = {
@@ -75,7 +79,32 @@ def find_schema_dir(install_path: str | None = None) -> str | None:
 def _load_schema(xsd_path: str):
     from lxml import etree
 
-    return etree.XMLSchema(etree.parse(xsd_path))
+    schema_root = Path(xsd_path).resolve().parent
+
+    class LocalSchemaResolver(etree.Resolver):
+        def resolve(self, url, public_id, context):
+            parsed = urlparse(url)
+            if parsed.scheme not in ("", "file") and not (len(parsed.scheme) == 1 and url[1:3] in (":\\", ":/")):
+                raise SchemaError("Network schema references are not permitted")
+            if parsed.netloc:
+                raise SchemaError("Remote schema references are not permitted")
+            location = unquote(parsed.path) if parsed.scheme == "file" else url
+            if os.name == "nt" and location.startswith("/") and len(location) > 2 and location[2] == ":":
+                location = location[1:]
+            candidate = Path(location)
+            if not candidate.is_absolute():
+                candidate = schema_root / candidate
+            candidate = candidate.resolve()
+            if not candidate.is_relative_to(schema_root):
+                raise SchemaError("Schema references must remain inside the schema directory")
+            return self.resolve_filename(str(candidate), context)
+
+    parser = xml_parser()
+    parser.resolvers.add(LocalSchemaResolver())
+    document = etree.parse(xsd_path, parser=parser)
+    if document.docinfo.doctype:
+        raise SchemaError("DTD declarations are not permitted in schemas")
+    return etree.XMLSchema(document)
 
 
 def validate(xml_text: str, schema_dir: str) -> dict:
@@ -88,8 +117,8 @@ def validate(xml_text: str, schema_dir: str) -> dict:
 
     text = xml_text.lstrip("﻿")
     try:
-        doc = etree.fromstring(text.encode("utf-8"))
-    except etree.XMLSyntaxError as exc:
+        doc = parse_xml_bytes(text.encode("utf-8"))
+    except (etree.XMLSyntaxError, ValueError) as exc:
         return {"valid": False, "root": None, "schema": None,
                 "errors": [f"XML not well-formed: {exc}"]}
     root = etree.QName(doc.tag).localname if doc.tag else None

@@ -4,7 +4,10 @@
       "command": "C:\\path\\to\\remoteconnect-mcp\\.venv\\Scripts\\python.exe",
       "args": ["-m", "remoteconnect_mcp"],
       "env": {
+        "CE_MCP_TOOL_PROFILE": "offline",
         "CE_MCP_ENABLE_ONLINE": "0",
+        "CE_MCP_READ_ROOTS": "D:\\RemoteConnect-MCP-Work",
+        "CE_MCP_WRITE_ROOTS": "D:\\RemoteConnect-MCP-Work",
         "CE_MCP_XPDF_CONTEXT": "C:\\ProgramData\\Schneider Electric\\CommonControlExpert\\16.2\\Xpdf\\SCBForSCADAPack.xpdf"
       }
     }
